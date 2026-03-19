@@ -35,6 +35,13 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS idx_telegram_msg_issue
       ON telegram_message_map (paperclip_issue_id);
 
+    CREATE TABLE IF NOT EXISTS telegram_callback_map (
+      short_id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      approval_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS telegram_poll_cursor (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -154,6 +161,24 @@ export async function setCursor(key: string, value: string) {
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
     [key, value]
   );
+}
+
+// --- Callback mapping (short ID → full UUIDs for Telegram buttons) ---
+
+export async function saveCallbackMap(shortId: string, companyId: string, approvalId: string) {
+  await pool.query(
+    `INSERT INTO telegram_callback_map (short_id, company_id, approval_id)
+     VALUES ($1, $2, $3) ON CONFLICT (short_id) DO NOTHING`,
+    [shortId, companyId, approvalId]
+  );
+}
+
+export async function getCallbackMap(shortId: string): Promise<{ company_id: string; approval_id: string } | null> {
+  const { rows } = await pool.query(
+    "SELECT company_id, approval_id FROM telegram_callback_map WHERE short_id = $1",
+    [shortId]
+  );
+  return rows[0] ?? null;
 }
 
 // --- Direct Paperclip DB queries for event polling ---

@@ -126,6 +126,11 @@ async function pollApprovals(bot: Bot) {
       publicUrl: `${config.paperclipPublicUrl}/${await db.getCompanyPrefix(approval.company_id)}/approvals/${approval.id}`,
     });
 
+    // Create short IDs for callback buttons (Telegram 64 byte limit)
+    const shortCompany = approval.company_id.replace(/-/g, "").slice(0, 12);
+    const shortApproval = approval.id.replace(/-/g, "").slice(0, 12);
+    await db.saveCallbackMap(shortApproval, approval.company_id, approval.id);
+
     for (const member of boardMembers) {
       try {
         const sent = await bot.api.sendMessage(member.telegram_chat_id, message, {
@@ -134,8 +139,8 @@ async function pollApprovals(bot: Bot) {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: "Approve", callback_data: `approve:${approval.company_id}:${approval.id}` },
-                { text: "Reject", callback_data: `reject:${approval.company_id}:${approval.id}` },
+                { text: "✅ Approve", callback_data: `a:${shortCompany}:${shortApproval}` },
+                { text: "❌ Reject", callback_data: `r:${shortCompany}:${shortApproval}` },
               ],
               [
                 { text: "View in Paperclip", url: `${config.paperclipPublicUrl}/${await db.getCompanyPrefix(approval.company_id)}/approvals/${approval.id}` },

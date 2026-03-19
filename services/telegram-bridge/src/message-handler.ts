@@ -221,21 +221,28 @@ export function registerHandlers(bot: Bot) {
     }
 
     const data = ctx.callbackQuery.data;
-    const [action, companyId, approvalId] = data.split(":");
+    const [action, , shortApprovalId] = data.split(":");
 
-    if (!companyId || !approvalId) {
+    if (!shortApprovalId) {
       await ctx.answerCallbackQuery({ text: "Invalid action" });
       return;
     }
 
+    // Resolve short ID to full UUIDs
+    const mapping = await db.getCallbackMap(shortApprovalId);
+    if (!mapping) {
+      await ctx.answerCallbackQuery({ text: "Approval not found — it may have expired" });
+      return;
+    }
+
     try {
-      if (action === "approve") {
-        await paperclip.approveApproval(companyId, approvalId);
+      if (action === "a") {
+        await paperclip.approveApproval(mapping.company_id, mapping.approval_id);
         await ctx.answerCallbackQuery({ text: "✅ Approved!" });
         await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
         await ctx.reply("✅ Approval granted.");
-      } else if (action === "reject") {
-        await paperclip.rejectApproval(companyId, approvalId);
+      } else if (action === "r") {
+        await paperclip.rejectApproval(mapping.company_id, mapping.approval_id);
         await ctx.answerCallbackQuery({ text: "❌ Rejected" });
         await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
         await ctx.reply("❌ Approval rejected.");
