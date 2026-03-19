@@ -4,7 +4,7 @@ export const config = {
   paperclipApiUrl: env("PAPERCLIP_API_URL", "http://server:3100"),
   paperclipPublicUrl: env("PAPERCLIP_PUBLIC_URL", "https://paperclip.primeform.in"),
   openrouterApiKey: env("OPENROUTER_API_KEY"),
-  aiModel: env("AI_MODEL", "anthropic/claude-sonnet-4"),
+  aiModel: env("AI_MODEL", "stepfun/step-3.5-flash:free"),
   pollIntervalMs: Number(env("POLL_INTERVAL_MS", "5000")),
 };
 

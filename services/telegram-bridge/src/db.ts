@@ -221,4 +221,100 @@ export async function getCompanyName(companyId: string): Promise<string> {
   return rows[0]?.name ?? "Unknown Company";
 }
 
+// --- Companies, Issues, Agents (direct DB reads) ---
+
+export async function listCompanies(): Promise<Array<{ id: string; name: string }>> {
+  const { rows } = await pool.query("SELECT id, name FROM companies ORDER BY created_at DESC");
+  return rows;
+}
+
+export async function listRecentIssues(companyId: string): Promise<Array<{
+  id: string; identifier: string; title: string; status: string;
+}>> {
+  const { rows } = await pool.query(
+    `SELECT id, identifier, title, status FROM issues
+     WHERE company_id = $1 ORDER BY created_at DESC LIMIT 20`,
+    [companyId]
+  );
+  return rows;
+}
+
+export async function listAgents(companyId: string): Promise<Array<{
+  id: string; name: string; role: string; status: string;
+}>> {
+  const { rows } = await pool.query(
+    "SELECT id, name, role, status FROM agents WHERE company_id = $1",
+    [companyId]
+  );
+  return rows;
+}
+
+// --- Create issues and comments directly in DB ---
+
+export async function createIssue(companyId: string, opts: {
+  title: string; description: string; assigneeAgentId?: string; createdByUserId?: string;
+}): Promise<{ id: string; identifier: string; title: string }> {
+  const counterResult = await pool.query(
+    `UPDATE companies SET issue_counter = issue_counter + 1, updated_at = NOW()
+     WHERE id = $1 RETURNING issue_prefix, issue_counter`,
+    [companyId]
+  );
+  const { issue_prefix, issue_counter } = counterResult.rows[0];
+  const identifier = `${issue_prefix}-${issue_counter}`;
+
+  const { rows } = await pool.query(
+    `INSERT INTO issues (company_id, title, description, status, priority, identifier, issue_number, created_by_user_id, assignee_agent_id)
+     VALUES ($1, $2, $3, 'todo', 'medium', $4, $5, $6, $7)
+     RETURNING id, identifier, title`,
+    [companyId, opts.title, opts.description, identifier, issue_counter, opts.createdByUserId ?? null, opts.assigneeAgentId ?? null]
+  );
+  console.log(`[db] created issue ${identifier} assigned to agent ${opts.assigneeAgentId ?? "none"}`);
+  return rows[0];
+}
+
+export async function updateIssueAssignment(issueId: string, agentId: string): Promise<void> {
+  await pool.query(
+    "UPDATE issues SET assignee_agent_id = $2, updated_at = NOW() WHERE id = $1",
+    [issueId, agentId]
+  );
+  console.log(`[db] reassigned issue ${issueId} to agent ${agentId}`);
+}
+
+export async function createIssueComment(companyId: string, issueId: string, body: string, authorUserId?: string): Promise<{
+  id: string;
+}> {
+  const { rows } = await pool.query(
+    `INSERT INTO issue_comments (company_id, issue_id, body, author_user_id)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id`,
+    [companyId, issueId, body, authorUserId ?? null]
+  );
+  // Also touch the issue updated_at so it shows activity
+  await pool.query(
+    "UPDATE issues SET updated_at = NOW() WHERE id = $1",
+    [issueId]
+  );
+  return rows[0];
+}
+
+// --- Trigger agent heartbeat ---
+
+export async function triggerHeartbeat(companyId: string): Promise<void> {
+  // Find active or idle agents for this company and queue a heartbeat run
+  const { rows: agents } = await pool.query(
+    "SELECT id FROM agents WHERE company_id = $1 AND status IN ('active', 'idle') ORDER BY (role = 'ceo') DESC LIMIT 1",
+    [companyId]
+  );
+  if (agents.length === 0) {
+    console.log("[db] no active agents to trigger heartbeat for");
+    return;
+  }
+  await pool.query(
+    `INSERT INTO heartbeat_runs (company_id, agent_id, invocation_source, status, trigger_detail)
+     VALUES ($1, $2, 'on_demand', 'queued', 'telegram-bridge')`,
+    [companyId, agents[0].id]
+  );
+  console.log(`[db] queued heartbeat for agent ${agents[0].id}`);
+}
+
 export { pool };

@@ -15,6 +15,20 @@ import { classifyMessage, generateReply } from "./ai.js";
  */
 export function registerHandlers(bot: Bot) {
 
+  /** Try to auto-link a user to a company if there's only one. */
+  async function tryAutoLink(chatId: string): Promise<string | null> {
+    const user = await db.getUser(chatId);
+    if (user?.paperclip_company_id) return user.paperclip_company_id;
+    try {
+      const companies = await db.listCompanies();
+      if (companies.length === 1) {
+        await db.upsertUser({ telegram_chat_id: chatId, paperclip_company_id: companies[0].id });
+        return companies[0].id;
+      }
+    } catch { /* API may not be ready */ }
+    return null;
+  }
+
   // --- /start command ---
   bot.command("start", async (ctx) => {
     const chatId = String(ctx.chat.id);
@@ -23,6 +37,7 @@ export function registerHandlers(bot: Bot) {
 
     const existing = await db.getUser(chatId);
     if (existing) {
+      await tryAutoLink(chatId);
       await ctx.reply(
         `Welcome back, ${displayName}! You're connected as <b>${existing.role}</b>.\n\nSend a message to interact with the AI team.`,
         { parse_mode: "HTML" }
@@ -39,9 +54,13 @@ export function registerHandlers(bot: Bot) {
         telegram_display_name: displayName,
         role: "board",
       });
+      // Auto-link if only one company
+      const companyId = await tryAutoLink(chatId);
+      const linkMsg = companyId
+        ? `\n\nAuto-linked to your company.`
+        : `\n\nUse /companies then /link &lt;company_id&gt; to connect.`;
       await ctx.reply(
-        `🎉 <b>You are the first user — registered as board admin!</b>\n\n` +
-        `Use /companies to see your companies, then /link &lt;company_id&gt; to connect.\n\n` +
+        `🎉 <b>You are the first user — registered as board admin!</b>${linkMsg}\n\n` +
         `To add team members, have them message this bot, then use:\n` +
         `<code>/whitelist &lt;chat_id&gt; &lt;role&gt;</code>\n\n` +
         `Roles: <b>board</b> (approvals + all notifications) or <b>member</b> (company notifications)`,
@@ -162,7 +181,7 @@ export function registerHandlers(bot: Bot) {
       return;
     }
     try {
-      const companies = await paperclip.listCompanies();
+      const companies = await db.listCompanies();
       if (companies.length === 0) {
         await ctx.reply("No companies found. Create one in the Paperclip UI first.");
         return;
@@ -232,7 +251,7 @@ export function registerHandlers(bot: Bot) {
     const chatId = String(ctx.chat.id);
     const messageText = ctx.message.text;
 
-    const user = await isWhitelisted(chatId);
+    let user = await isWhitelisted(chatId);
     if (!user) {
       await ctx.reply(
         `⛔ You're not authorized.\n\nYour chat ID: <code>${chatId}</code>\nAsk a board admin to whitelist you.`,
@@ -242,18 +261,24 @@ export function registerHandlers(bot: Bot) {
     }
 
     if (!user.paperclip_company_id) {
-      await ctx.reply(
-        "You're not linked to a company yet.\nUse /companies to list them, then /link <company_id>."
-      );
-      return;
+      const linked = await tryAutoLink(chatId);
+      if (linked) {
+        user = (await db.getUser(chatId))!;
+      } else {
+        await ctx.reply(
+          "You're not linked to a company yet.\nUse /companies to list them, then /link <company_id>."
+        );
+        return;
+      }
     }
+    const companyId = user.paperclip_company_id!;
 
     // Save inbound message
     await db.saveMessageMap({
       telegram_chat_id: chatId,
       telegram_message_id: String(ctx.message.message_id),
       direction: "inbound",
-      paperclip_company_id: user.paperclip_company_id,
+      paperclip_company_id: companyId,
       raw_text: messageText,
     });
 
@@ -271,29 +296,44 @@ export function registerHandlers(bot: Bot) {
       }));
     } catch { /* ignore */ }
 
+    // Show typing indicator while processing
+    await ctx.api.sendChatAction(ctx.chat.id, "typing");
+    const typingInterval = setInterval(() => {
+      ctx.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
+    }, 4000);
+
+    // Get available agents for routing
+    const availableAgents = await db.listAgents(companyId);
+
     // Classify the message with AI
-    const classification = await classifyMessage(messageText, chatContext, pendingApprovals);
+    console.log(`[handler] classifying message from ${chatId}: "${messageText.slice(0, 80)}"`);
+    const classification = await classifyMessage(messageText, chatContext, pendingApprovals, availableAgents);
+    console.log(`[handler] classification:`, JSON.stringify(classification));
 
     let reply: string;
 
     switch (classification.intent) {
       case "new_issue": {
         try {
-          const issue = await paperclip.createIssue(user.paperclip_company_id, {
+          const issue = await db.createIssue(companyId, {
             title: classification.title ?? messageText.slice(0, 100),
-            body: classification.body,
+            description: classification.body,
+            assigneeAgentId: classification.assignTo,
           });
-          reply = `📋 Created issue <b>${issue.identifier}</b>: ${classification.title ?? issue.title}\n\n` +
-            `<a href="${config.paperclipPublicUrl}/companies/${user.paperclip_company_id}/issues/${issue.id}">View in Paperclip</a>`;
+          reply = `📋 Created issue <b>${issue.identifier}</b>: ${issue.title}\n\n` +
+            `<a href="${config.paperclipPublicUrl}/companies/${companyId}/issues/${issue.id}">View in Paperclip</a>`;
 
           await db.saveMessageMap({
             telegram_chat_id: chatId,
             telegram_message_id: String(ctx.message.message_id),
             direction: "inbound",
             paperclip_issue_id: issue.id,
-            paperclip_company_id: user.paperclip_company_id,
+            paperclip_company_id: companyId,
             raw_text: messageText,
           });
+
+          // Trigger agent heartbeat so an agent picks up the new issue
+          await db.triggerHeartbeat(companyId);
         } catch (err) {
           console.error("[handler] create issue failed:", err);
           reply = "⚠️ Failed to create issue. Please try again or use the web UI.";
@@ -307,20 +347,28 @@ export function registerHandlers(bot: Bot) {
           break;
         }
         try {
-          await paperclip.createComment(user.paperclip_company_id, classification.issueId, {
-            body: classification.body,
-          });
-          reply = `💬 Comment added to issue.\n\n` +
-            `<a href="${config.paperclipPublicUrl}/companies/${user.paperclip_company_id}/issues/${classification.issueId}">View thread</a>`;
+          await db.createIssueComment(companyId, classification.issueId, classification.body);
+          // Reassign if the AI suggests a different agent
+          let assignMsg = "";
+          if (classification.assignTo) {
+            await db.updateIssueAssignment(classification.issueId, classification.assignTo);
+            const agentName = await db.getAgentName(classification.assignTo);
+            assignMsg = `\n🔄 Reassigned to <b>${agentName}</b>`;
+          }
+          reply = `💬 Comment added to issue.${assignMsg}\n\n` +
+            `<a href="${config.paperclipPublicUrl}/companies/${companyId}/issues/${classification.issueId}">View thread</a>`;
 
           await db.saveMessageMap({
             telegram_chat_id: chatId,
             telegram_message_id: String(ctx.message.message_id),
             direction: "inbound",
             paperclip_issue_id: classification.issueId,
-            paperclip_company_id: user.paperclip_company_id,
+            paperclip_company_id: companyId,
             raw_text: messageText,
           });
+
+          // Trigger heartbeat for the updated issue
+          await db.triggerHeartbeat(companyId);
         } catch (err) {
           console.error("[handler] create comment failed:", err);
           reply = "⚠️ Failed to add comment. Please try again.";
@@ -339,10 +387,10 @@ export function registerHandlers(bot: Bot) {
         }
         try {
           if (classification.approvalAction === "approve") {
-            await paperclip.approveApproval(user.paperclip_company_id, classification.approvalId);
+            await paperclip.approveApproval(companyId, classification.approvalId);
             reply = "✅ Approved!";
           } else if (classification.approvalAction === "reject") {
-            await paperclip.rejectApproval(user.paperclip_company_id, classification.approvalId);
+            await paperclip.rejectApproval(companyId, classification.approvalId);
             reply = "❌ Rejected.";
           } else {
             reply = "Revision requested — please add details in the web UI.";
@@ -356,13 +404,13 @@ export function registerHandlers(bot: Bot) {
 
       case "status_query": {
         try {
-          const issues = await paperclip.listRecentIssues(user.paperclip_company_id);
-          const agents = await paperclip.listAgents(user.paperclip_company_id);
+          const issues = await db.listRecentIssues(companyId);
+          const agents = await db.listAgents(companyId);
 
           const companyContext = [
-            `Active agents: ${agents.filter((a: paperclip.Agent) => a.status === "active").length}/${agents.length}`,
+            `Active agents: ${agents.filter((a) => a.status === "active").length}/${agents.length}`,
             `Recent issues: ${issues.length}`,
-            issues.slice(0, 5).map((i: paperclip.Issue) => `• [${i.identifier}] ${i.title} (${i.status})`).join("\n"),
+            issues.slice(0, 5).map((i) => `• [${i.identifier}] ${i.title} (${i.status})`).join("\n"),
           ].join("\n");
 
           reply = await generateReply(messageText, chatContext, companyContext);
@@ -378,6 +426,8 @@ export function registerHandlers(bot: Bot) {
       }
     }
 
+    clearInterval(typingInterval);
+
     const sent = await ctx.reply(reply, {
       parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
@@ -387,7 +437,7 @@ export function registerHandlers(bot: Bot) {
       telegram_chat_id: chatId,
       telegram_message_id: String(sent.message_id),
       direction: "outbound",
-      paperclip_company_id: user.paperclip_company_id,
+      paperclip_company_id: companyId,
       raw_text: reply,
     });
   });

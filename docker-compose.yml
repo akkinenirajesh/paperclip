@@ -25,12 +25,14 @@ services:
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
       PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
+      PAPERCLIP_AGENT_JWT_SECRET: "${PAPERCLIP_AGENT_JWT_SECRET:?PAPERCLIP_AGENT_JWT_SECRET must be set}"
+      PAPERCLIP_ALLOWED_HOSTNAMES: "server,localhost,paperclip.primeform.in"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     volumes:
       - paperclip-data:/paperclip
-      - /home/rajesh/.claude:/paperclip/.claude:ro
+      - /home/rajesh/.claude/.credentials.json:/paperclip/.claude/.credentials.json:ro
     depends_on:
       db:
         condition: service_healthy

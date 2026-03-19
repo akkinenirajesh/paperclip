@@ -13,6 +13,12 @@ async function main() {
   // Create the bot
   const bot = new Bot(config.telegramBotToken);
 
+  // Global error handler — catch and log all errors
+  bot.catch((err) => {
+    console.error("[bot] unhandled error:", err.message ?? err);
+    if (err.stack) console.error(err.stack);
+  });
+
   // Register message handlers
   registerHandlers(bot);
 

@@ -13,6 +13,7 @@ export interface MessageClassification {
   body: string;
   approvalAction?: "approve" | "reject" | "request_revision";
   approvalId?: string;
+  assignTo?: string; // agent ID to assign the issue to
 }
 
 /**
@@ -23,6 +24,7 @@ export async function classifyMessage(
   messageText: string,
   chatContext: Array<{ direction: string; raw_text: string; paperclip_issue_id: string | null }>,
   pendingApprovals: Array<{ id: string; title: string }>,
+  availableAgents: Array<{ id: string; name: string; role: string }>,
 ): Promise<MessageClassification> {
   const contextStr = chatContext
     .slice(-10)
@@ -33,6 +35,10 @@ export async function classifyMessage(
     ? `Pending approvals:\n${pendingApprovals.map((a) => `- ID: ${a.id} — "${a.title}"`).join("\n")}`
     : "No pending approvals.";
 
+  const agentsStr = availableAgents.length > 0
+    ? `Available agents:\n${availableAgents.map((a) => `- ID: ${a.id} | Name: ${a.name} | Role: ${a.role}`).join("\n")}`
+    : "No agents available.";
+
   const response = await client.chat.completions.create({
     model: config.aiModel,
     temperature: 0,
@@ -40,26 +46,42 @@ export async function classifyMessage(
     messages: [
       {
         role: "system",
-        content: `You classify incoming messages from a human team member to an AI-managed company (Paperclip).
-Return JSON with these fields:
-- intent: one of "new_issue", "reply_to_issue", "approval_response", "status_query", "general"
-- issueId: (optional) if replying to an existing issue from the chat context
-- title: (optional) short title if creating a new issue
-- body: the message content, cleaned up for an issue comment
-- approvalAction: (optional) "approve", "reject", or "request_revision"
-- approvalId: (optional) which approval ID this responds to
+        content: `You are a message router for Paperclip, an AI-managed company. Your job is to classify each incoming human message and return JSON.
 
-Rules:
-- If the message seems like a new task, bug report, or request → "new_issue" with a title
-- If it's clearly a follow-up to a recent conversation about an issue → "reply_to_issue" with the issueId from context
-- If it references approving/rejecting something and there are pending approvals → "approval_response"
-- If asking about status of work → "status_query"
-- Otherwise → "general"
-- Keep the body concise and professional`,
+OUTPUT FORMAT (strict JSON, no markdown):
+{
+  "intent": "new_issue" | "reply_to_issue" | "approval_response" | "status_query" | "general",
+  "issueId": "<uuid from chat context, only for reply_to_issue>",
+  "title": "<short issue title, required for new_issue>",
+  "body": "<cleaned message text for the issue/comment body>",
+  "approvalAction": "approve" | "reject" | "request_revision",
+  "approvalId": "<uuid>",
+  "assignTo": "<agent ID to assign the issue to, pick the most relevant agent based on their name and role>"
+}
+
+CLASSIFICATION RULES — follow these in ORDER:
+
+1. "general" — ONLY for single-word greetings like "hi", "ok", "thanks", "bye", or messages with zero business content.
+
+2. "approval_response" — The human explicitly approves/rejects AND there are pending approvals listed.
+
+3. "reply_to_issue" — The chat context shows a recent issue (with issueId), and this message clearly continues that thread.
+
+4. "status_query" — The human is ASKING a question about what's happening. Contains "?" or words like "status", "update", "progress", "how is".
+
+5. "new_issue" — EVERYTHING ELSE. This is the DEFAULT. Any message that contains information, instructions, updates, reports, requests, decisions, or directives MUST be classified as "new_issue". Examples:
+   - "Inform the CEO that X" → new_issue, title: "Inform CEO: X"
+   - "We fixed the bug" → new_issue, title: "Bug fix completed"
+   - "Deploy to production today" → new_issue, title: "Deploy to production"
+   - "The server is down" → new_issue, title: "Server down"
+
+6. "assignTo" — For new_issue, pick the best agent from the available agents list based on the message content and the agent's name/role. If the message mentions a specific role (CEO, CTO, engineer), assign to that agent. If unsure, assign to the CEO or the first agent.
+
+If you are unsure about intent, return "new_issue". Never return "general" for a message with more than 3 words that contains business-relevant information.`,
       },
       {
         role: "user",
-        content: `Recent chat context:\n${contextStr}\n\n${approvalsStr}\n\nNew message from human:\n${messageText}`,
+        content: `Recent chat context:\n${contextStr}\n\n${approvalsStr}\n\n${agentsStr}\n\nNew message from human:\n${messageText}`,
       },
     ],
   });
