@@ -54,6 +54,7 @@ async function pollAgentComments(bot: Bot) {
 
     const agentName = await db.getAgentName(comment.author_agent_id!);
     const companyName = await db.getCompanyName(comment.company_id);
+    const prefix = await db.getCompanyPrefix(comment.company_id);
 
     const message = await formatNotification({
       type: "agent_comment",
@@ -62,7 +63,7 @@ async function pollAgentComments(bot: Bot) {
       issueIdentifier: comment.issue_identifier,
       issueTitle: comment.issue_title,
       body: comment.body.slice(0, 1000),
-      publicUrl: `${config.paperclipPublicUrl}/companies/${comment.company_id}/issues/${comment.issue_id}`,
+      publicUrl: `${config.paperclipPublicUrl}/${prefix}/issues/${comment.issue_id}`,
     });
 
     for (const recipient of recipients) {
@@ -122,7 +123,7 @@ async function pollApprovals(bot: Bot) {
       title,
       body,
       approvalId: approval.id,
-      publicUrl: `${config.paperclipPublicUrl}/companies/${approval.company_id}/approvals/${approval.id}`,
+      publicUrl: `${config.paperclipPublicUrl}/${await db.getCompanyPrefix(approval.company_id)}/approvals/${approval.id}`,
     });
 
     for (const member of boardMembers) {
@@ -137,7 +138,7 @@ async function pollApprovals(bot: Bot) {
                 { text: "Reject", callback_data: `reject:${approval.company_id}:${approval.id}` },
               ],
               [
-                { text: "View in Paperclip", url: `${config.paperclipPublicUrl}/companies/${approval.company_id}/approvals/${approval.id}` },
+                { text: "View in Paperclip", url: `${config.paperclipPublicUrl}/${await db.getCompanyPrefix(approval.company_id)}/approvals/${approval.id}` },
               ],
             ],
           },

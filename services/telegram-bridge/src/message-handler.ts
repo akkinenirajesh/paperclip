@@ -272,6 +272,7 @@ export function registerHandlers(bot: Bot) {
       }
     }
     const companyId = user.paperclip_company_id!;
+    const companyPrefix = await db.getCompanyPrefix(companyId);
 
     // Save inbound message
     await db.saveMessageMap({
@@ -321,7 +322,7 @@ export function registerHandlers(bot: Bot) {
             assigneeAgentId: classification.assignTo,
           });
           reply = `📋 Created issue <b>${issue.identifier}</b>: ${issue.title}\n\n` +
-            `<a href="${config.paperclipPublicUrl}/companies/${companyId}/issues/${issue.id}">View in Paperclip</a>`;
+            `<a href="${config.paperclipPublicUrl}/${companyPrefix}/issues/${issue.id}">View in Paperclip</a>`;
 
           await db.saveMessageMap({
             telegram_chat_id: chatId,
@@ -356,7 +357,7 @@ export function registerHandlers(bot: Bot) {
             assignMsg = `\n🔄 Reassigned to <b>${agentName}</b>`;
           }
           reply = `💬 Comment added to issue.${assignMsg}\n\n` +
-            `<a href="${config.paperclipPublicUrl}/companies/${companyId}/issues/${classification.issueId}">View thread</a>`;
+            `<a href="${config.paperclipPublicUrl}/${companyPrefix}/issues/${classification.issueId}">View thread</a>`;
 
           await db.saveMessageMap({
             telegram_chat_id: chatId,
@@ -404,6 +405,21 @@ export function registerHandlers(bot: Bot) {
 
       case "status_query": {
         try {
+          // Check if there's an active issue with pending agent questions
+          const lastIssueMsg = chatContext.slice(-10).reverse().find((m) => m.paperclip_issue_id);
+          if (lastIssueMsg?.paperclip_issue_id) {
+            const agentComment = await db.getLatestAgentComment(lastIssueMsg.paperclip_issue_id);
+            if (agentComment) {
+              const issueTitle = await db.getIssueTitle(lastIssueMsg.paperclip_issue_id);
+              reply = `📋 <b>${issueTitle}</b>\n\n` +
+                `<b>${agentComment.agent_name}</b> is waiting for your input:\n\n` +
+                `${agentComment.body.slice(0, 1500)}\n\n` +
+                `💬 <b>Reply here to respond to ${agentComment.agent_name}</b>`;
+              break;
+            }
+          }
+
+          // Fallback: general status
           const issues = await db.listRecentIssues(companyId);
           const agents = await db.listAgents(companyId);
 

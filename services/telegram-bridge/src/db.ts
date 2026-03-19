@@ -221,6 +221,14 @@ export async function getCompanyName(companyId: string): Promise<string> {
   return rows[0]?.name ?? "Unknown Company";
 }
 
+export async function getCompanyPrefix(companyId: string): Promise<string> {
+  const { rows } = await pool.query(
+    "SELECT issue_prefix FROM companies WHERE id = $1",
+    [companyId]
+  );
+  return rows[0]?.issue_prefix ?? "PAP";
+}
+
 // --- Companies, Issues, Agents (direct DB reads) ---
 
 export async function listCompanies(): Promise<Array<{ id: string; name: string }>> {
@@ -315,6 +323,25 @@ export async function triggerHeartbeat(companyId: string): Promise<void> {
     [companyId, agents[0].id]
   );
   console.log(`[db] queued heartbeat for agent ${agents[0].id}`);
+}
+
+/** Get the latest agent comment on an issue (to surface pending questions) */
+export async function getLatestAgentComment(issueId: string): Promise<{ body: string; agent_name: string } | null> {
+  const { rows } = await pool.query(
+    `SELECT ic.body, a.name as agent_name
+     FROM issue_comments ic
+     JOIN agents a ON a.id = ic.author_agent_id
+     WHERE ic.issue_id = $1 AND ic.author_agent_id IS NOT NULL
+     ORDER BY ic.created_at DESC LIMIT 1`,
+    [issueId]
+  );
+  return rows[0] ?? null;
+}
+
+/** Get issue title by ID */
+export async function getIssueTitle(issueId: string): Promise<string> {
+  const { rows } = await pool.query("SELECT identifier, title FROM issues WHERE id = $1", [issueId]);
+  return rows[0] ? `${rows[0].identifier}: ${rows[0].title}` : "Unknown issue";
 }
 
 export { pool };
