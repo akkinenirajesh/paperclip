@@ -61,7 +61,7 @@ async function pollAgentComments(bot: Bot) {
       companyName,
       issueIdentifier: comment.issue_identifier,
       issueTitle: comment.issue_title,
-      body: comment.body.slice(0, 300),
+      body: comment.body.slice(0, 1000),
       publicUrl: `${config.paperclipPublicUrl}/companies/${comment.company_id}/issues/${comment.issue_id}`,
     });
 

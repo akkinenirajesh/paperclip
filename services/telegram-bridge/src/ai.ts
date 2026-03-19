@@ -26,9 +26,18 @@ export async function classifyMessage(
   pendingApprovals: Array<{ id: string; title: string }>,
   availableAgents: Array<{ id: string; name: string; role: string }>,
 ): Promise<MessageClassification> {
+  // Find the most recent issue ID in context for reply detection
+  const lastIssueId = chatContext
+    .slice(-10)
+    .reverse()
+    .find((m) => m.paperclip_issue_id)?.paperclip_issue_id ?? null;
+
   const contextStr = chatContext
     .slice(-10)
-    .map((m) => `[${m.direction}${m.paperclip_issue_id ? ` re:${m.paperclip_issue_id}` : ""}] ${m.raw_text}`)
+    .map((m) => {
+      const tag = m.paperclip_issue_id ? ` [ISSUE:${m.paperclip_issue_id}]` : "";
+      return `[${m.direction}${tag}] ${m.raw_text?.slice(0, 200) ?? ""}`;
+    })
     .join("\n");
 
   const approvalsStr = pendingApprovals.length > 0
@@ -81,7 +90,7 @@ If you are unsure about intent, return "new_issue". Never return "general" for a
       },
       {
         role: "user",
-        content: `Recent chat context:\n${contextStr}\n\n${approvalsStr}\n\n${agentsStr}\n\nNew message from human:\n${messageText}`,
+        content: `Recent chat context:\n${contextStr}\n\n${lastIssueId ? `ACTIVE ISSUE IN CONVERSATION: ${lastIssueId} — if the human's message relates to this issue thread, use intent "reply_to_issue" with this issueId.\n\n` : ""}${approvalsStr}\n\n${agentsStr}\n\nNew message from human:\n${messageText}`,
       },
     ],
   });
@@ -115,9 +124,15 @@ export async function formatNotification(event: {
       {
         role: "system",
         content: `You format notifications from an AI company (Paperclip) for a human reading on Telegram.
-Keep it brief, clear, and actionable. Use Telegram HTML formatting (<b>, <i>, <code>, <a>).
-No markdown. Max 500 chars. Include a direct link if a URL is provided.
-Always mention which agent and company this is from.`,
+Use Telegram HTML formatting (<b>, <i>, <code>, <a>). No markdown.
+Always mention which agent, company, and issue identifier this is from.
+Max 1500 chars.
+
+IMPORTANT rules:
+- If the body contains QUESTIONS for the human, you MUST preserve ALL questions in the notification. Do not summarize them away.
+- If the agent is asking for input/decisions, end with: "💬 <b>Reply here to respond</b>"
+- Include a direct link if a URL is provided.
+- For status updates with no questions, keep it brief.`,
       },
       {
         role: "user",
