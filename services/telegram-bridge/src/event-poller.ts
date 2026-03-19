@@ -28,22 +28,30 @@ export function startEventPoller(bot: Bot) {
 }
 
 async function pollAgentComments(bot: Bot) {
-  const cursor = await db.getCursor("last_comment_ts") ?? new Date(Date.now() - 60_000).toISOString();
+  let cursor = await db.getCursor("last_comment_ts");
+  if (!cursor) {
+    // First run: set cursor to now so we don't notify for old comments
+    cursor = new Date().toISOString();
+    await db.setCursor("last_comment_ts", cursor);
+    return;
+  }
   const comments = await db.getNewIssueComments(cursor);
 
   if (comments.length === 0) return;
 
+  // Advance cursor past the last comment (add 1ms to avoid precision re-match)
+  const lastTs = new Date(new Date(comments[comments.length - 1].created_at).getTime() + 1);
+  await db.setCursor("last_comment_ts", lastTs.toISOString());
+
   const users = await db.getAllUsers();
 
   for (const comment of comments) {
-    // Find telegram users mapped to this company
     const recipients = users.filter(
       (u) => u.paperclip_company_id === comment.company_id || u.role === "board"
     );
 
     if (recipients.length === 0) continue;
 
-    // Check if we already notified for this comment (avoid duplicates)
     const agentName = await db.getAgentName(comment.author_agent_id!);
     const companyName = await db.getCompanyName(comment.company_id);
 
@@ -79,17 +87,23 @@ async function pollAgentComments(bot: Bot) {
     }
   }
 
-  await db.setCursor("last_comment_ts", comments[comments.length - 1].created_at);
 }
 
 async function pollApprovals(bot: Bot) {
-  const cursor = await db.getCursor("last_approval_ts") ?? new Date(Date.now() - 60_000).toISOString();
+  let cursor = await db.getCursor("last_approval_ts");
+  if (!cursor) {
+    cursor = new Date().toISOString();
+    await db.setCursor("last_approval_ts", cursor);
+    return;
+  }
   const approvals = await db.getNewApprovals(cursor);
 
   if (approvals.length === 0) return;
 
+  const lastApprovalTs = new Date(new Date(approvals[approvals.length - 1].created_at).getTime() + 1);
+  await db.setCursor("last_approval_ts", lastApprovalTs.toISOString());
+
   const users = await db.getAllUsers();
-  // Only board members get approval notifications
   const boardMembers = users.filter((u) => u.role === "board");
 
   for (const approval of approvals) {
@@ -142,7 +156,6 @@ async function pollApprovals(bot: Bot) {
     }
   }
 
-  await db.setCursor("last_approval_ts", approvals[approvals.length - 1].created_at);
 }
 
 function sleep(ms: number) {
