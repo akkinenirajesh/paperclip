@@ -350,6 +350,36 @@ export async function triggerHeartbeat(companyId: string): Promise<void> {
   console.log(`[db] queued heartbeat for agent ${agents[0].id}`);
 }
 
+// --- Approval actions via DB ---
+
+export async function approveApproval(approvalId: string, decidedBy: string): Promise<string | null> {
+  const { rows } = await pool.query(
+    `UPDATE approvals SET status = 'approved', decided_by_user_id = $2, decided_at = NOW(), updated_at = NOW()
+     WHERE id = $1 AND status = 'pending' RETURNING requested_by_agent_id, company_id`,
+    [approvalId, decidedBy]
+  );
+  if (rows.length === 0) return null;
+  // Wake the requesting agent
+  if (rows[0].requested_by_agent_id) {
+    await pool.query(
+      `INSERT INTO heartbeat_runs (company_id, agent_id, invocation_source, status, trigger_detail)
+       VALUES ($1, $2, 'on_demand', 'queued', 'approval_approved')`,
+      [rows[0].company_id, rows[0].requested_by_agent_id]
+    );
+    console.log(`[db] approval ${approvalId} approved, woke agent ${rows[0].requested_by_agent_id}`);
+  }
+  return rows[0].requested_by_agent_id;
+}
+
+export async function rejectApproval(approvalId: string, decidedBy: string, reason?: string): Promise<void> {
+  await pool.query(
+    `UPDATE approvals SET status = 'rejected', decided_by_user_id = $2, decision_note = $3, decided_at = NOW(), updated_at = NOW()
+     WHERE id = $1 AND status = 'pending'`,
+    [approvalId, decidedBy, reason ?? null]
+  );
+  console.log(`[db] approval ${approvalId} rejected`);
+}
+
 /** Get the latest agent comment on an issue (to surface pending questions) */
 export async function getLatestAgentComment(issueId: string): Promise<{ body: string; agent_name: string } | null> {
   const { rows } = await pool.query(

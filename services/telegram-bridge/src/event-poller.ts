@@ -39,10 +39,6 @@ async function pollAgentComments(bot: Bot) {
 
   if (comments.length === 0) return;
 
-  // Advance cursor past the last comment (add 1ms to avoid precision re-match)
-  const lastTs = new Date(new Date(comments[comments.length - 1].created_at).getTime() + 1);
-  await db.setCursor("last_comment_ts", lastTs.toISOString());
-
   const users = await db.getAllUsers();
 
   for (const comment of comments) {
@@ -88,6 +84,9 @@ async function pollAgentComments(bot: Bot) {
     }
   }
 
+  // Advance cursor only after all sends complete
+  const lastTs = new Date(new Date(comments[comments.length - 1].created_at).getTime() + 1);
+  await db.setCursor("last_comment_ts", lastTs.toISOString());
 }
 
 async function pollApprovals(bot: Bot) {
@@ -100,9 +99,6 @@ async function pollApprovals(bot: Bot) {
   const approvals = await db.getNewApprovals(cursor);
 
   if (approvals.length === 0) return;
-
-  const lastApprovalTs = new Date(new Date(approvals[approvals.length - 1].created_at).getTime() + 1);
-  await db.setCursor("last_approval_ts", lastApprovalTs.toISOString());
 
   const users = await db.getAllUsers();
   const boardMembers = users.filter((u) => u.role === "board");
@@ -162,6 +158,9 @@ async function pollApprovals(bot: Bot) {
     }
   }
 
+  // Advance cursor only after all sends complete
+  const lastApprovalTs = new Date(new Date(approvals[approvals.length - 1].created_at).getTime() + 1);
+  await db.setCursor("last_approval_ts", lastApprovalTs.toISOString());
 }
 
 function sleep(ms: number) {

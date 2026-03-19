@@ -237,12 +237,12 @@ export function registerHandlers(bot: Bot) {
 
     try {
       if (action === "a") {
-        await paperclip.approveApproval(mapping.company_id, mapping.approval_id);
+        await db.approveApproval(mapping.approval_id, "board");
         await ctx.answerCallbackQuery({ text: "✅ Approved!" });
         await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
-        await ctx.reply("✅ Approval granted.");
+        await ctx.reply("✅ Approval granted. Agent has been notified.");
       } else if (action === "r") {
-        await paperclip.rejectApproval(mapping.company_id, mapping.approval_id);
+        await db.rejectApproval(mapping.approval_id, "board");
         await ctx.answerCallbackQuery({ text: "❌ Rejected" });
         await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
         await ctx.reply("❌ Approval rejected.");
