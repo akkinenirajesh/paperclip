@@ -32,7 +32,7 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     volumes:
       - paperclip-data:/paperclip
-      - /home/rajesh/.claude/.credentials.json:/paperclip/.claude/.credentials.json:ro
+      - /home/rajesh/.claude:/paperclip/.claude
     depends_on:
       db:
         condition: service_healthy
