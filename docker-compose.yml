@@ -10,8 +10,6 @@ services:
       interval: 2s
       timeout: 5s
       retries: 30
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -27,11 +25,33 @@ services:
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
       PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     volumes:
       - paperclip-data:/paperclip
+      - /home/rajesh/.claude:/paperclip/.claude:ro
     depends_on:
       db:
         condition: service_healthy
+
+  telegram-bridge:
+    build:
+      context: ./services/telegram-bridge
+      dockerfile: Dockerfile
+    environment:
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip
+      PAPERCLIP_API_URL: "http://server:3100"
+      PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-https://paperclip.primeform.in}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      AI_MODEL: "${TELEGRAM_AI_MODEL:-anthropic/claude-sonnet-4}"
+    depends_on:
+      db:
+        condition: service_healthy
+      server:
+        condition: service_started
+    restart: unless-stopped
 
 volumes:
   pgdata:

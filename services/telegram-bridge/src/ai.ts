@@ -1,0 +1,144 @@
+import OpenAI from "openai";
+import { config } from "./config.js";
+
+const client = new OpenAI({
+  apiKey: config.openrouterApiKey,
+  baseURL: "https://openrouter.ai/api/v1",
+});
+
+export interface MessageClassification {
+  intent: "new_issue" | "reply_to_issue" | "approval_response" | "status_query" | "general";
+  issueId?: string;
+  title?: string;
+  body: string;
+  approvalAction?: "approve" | "reject" | "request_revision";
+  approvalId?: string;
+}
+
+/**
+ * Classify an incoming Telegram message using AI.
+ * Given chat context, determine if this is a new issue, a reply, an approval action, etc.
+ */
+export async function classifyMessage(
+  messageText: string,
+  chatContext: Array<{ direction: string; raw_text: string; paperclip_issue_id: string | null }>,
+  pendingApprovals: Array<{ id: string; title: string }>,
+): Promise<MessageClassification> {
+  const contextStr = chatContext
+    .slice(-10)
+    .map((m) => `[${m.direction}${m.paperclip_issue_id ? ` re:${m.paperclip_issue_id}` : ""}] ${m.raw_text}`)
+    .join("\n");
+
+  const approvalsStr = pendingApprovals.length > 0
+    ? `Pending approvals:\n${pendingApprovals.map((a) => `- ID: ${a.id} — "${a.title}"`).join("\n")}`
+    : "No pending approvals.";
+
+  const response = await client.chat.completions.create({
+    model: config.aiModel,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `You classify incoming messages from a human team member to an AI-managed company (Paperclip).
+Return JSON with these fields:
+- intent: one of "new_issue", "reply_to_issue", "approval_response", "status_query", "general"
+- issueId: (optional) if replying to an existing issue from the chat context
+- title: (optional) short title if creating a new issue
+- body: the message content, cleaned up for an issue comment
+- approvalAction: (optional) "approve", "reject", or "request_revision"
+- approvalId: (optional) which approval ID this responds to
+
+Rules:
+- If the message seems like a new task, bug report, or request → "new_issue" with a title
+- If it's clearly a follow-up to a recent conversation about an issue → "reply_to_issue" with the issueId from context
+- If it references approving/rejecting something and there are pending approvals → "approval_response"
+- If asking about status of work → "status_query"
+- Otherwise → "general"
+- Keep the body concise and professional`,
+      },
+      {
+        role: "user",
+        content: `Recent chat context:\n${contextStr}\n\n${approvalsStr}\n\nNew message from human:\n${messageText}`,
+      },
+    ],
+  });
+
+  const content = response.choices[0]?.message?.content ?? "{}";
+  try {
+    return JSON.parse(content) as MessageClassification;
+  } catch {
+    return { intent: "general", body: messageText };
+  }
+}
+
+/**
+ * Format a Paperclip event into a human-friendly Telegram message.
+ */
+export async function formatNotification(event: {
+  type: string;
+  agentName: string;
+  companyName: string;
+  title?: string;
+  body?: string;
+  issueIdentifier?: string;
+  issueTitle?: string;
+  approvalId?: string;
+  publicUrl: string;
+}): Promise<string> {
+  const response = await client.chat.completions.create({
+    model: config.aiModel,
+    temperature: 0.3,
+    messages: [
+      {
+        role: "system",
+        content: `You format notifications from an AI company (Paperclip) for a human reading on Telegram.
+Keep it brief, clear, and actionable. Use Telegram HTML formatting (<b>, <i>, <code>, <a>).
+No markdown. Max 500 chars. Include a direct link if a URL is provided.
+Always mention which agent and company this is from.`,
+      },
+      {
+        role: "user",
+        content: JSON.stringify(event),
+      },
+    ],
+  });
+
+  return response.choices[0]?.message?.content ?? `[${event.type}] ${event.title ?? event.body ?? "New notification"}`;
+}
+
+/**
+ * Generate a conversational reply to a general or status query message.
+ */
+export async function generateReply(
+  messageText: string,
+  chatContext: Array<{ direction: string; raw_text: string }>,
+  companyContext: string,
+): Promise<string> {
+  const contextStr = chatContext
+    .slice(-10)
+    .map((m) => `[${m.direction}] ${m.raw_text}`)
+    .join("\n");
+
+  const response = await client.chat.completions.create({
+    model: config.aiModel,
+    temperature: 0.5,
+    messages: [
+      {
+        role: "system",
+        content: `You are the communications interface for an AI-managed company on Paperclip.
+You respond to humans on behalf of the AI team. Be helpful, concise, and professional.
+Use Telegram HTML formatting. Keep responses under 500 chars.
+
+Company context:
+${companyContext}`,
+      },
+      {
+        role: "user",
+        content: `Chat history:\n${contextStr}\n\nHuman says: ${messageText}`,
+      },
+    ],
+  });
+
+  return response.choices[0]?.message?.content ?? "I'll look into that and get back to you.";
+}

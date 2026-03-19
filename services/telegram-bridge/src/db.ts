@@ -1,0 +1,224 @@
+import pg from "pg";
+import { config } from "./config.js";
+
+const pool = new pg.Pool({ connectionString: config.databaseUrl });
+
+/** Run the migration to create telegram bridge tables */
+export async function migrate() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS telegram_user_map (
+      telegram_chat_id TEXT PRIMARY KEY,
+      telegram_username TEXT,
+      telegram_display_name TEXT,
+      paperclip_user_id TEXT,
+      paperclip_company_id TEXT,
+      role TEXT NOT NULL DEFAULT 'member',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS telegram_message_map (
+      id SERIAL PRIMARY KEY,
+      telegram_chat_id TEXT NOT NULL,
+      telegram_message_id TEXT NOT NULL,
+      direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+      paperclip_issue_id TEXT,
+      paperclip_comment_id TEXT,
+      paperclip_company_id TEXT,
+      raw_text TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_telegram_msg_chat
+      ON telegram_message_map (telegram_chat_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_telegram_msg_issue
+      ON telegram_message_map (paperclip_issue_id);
+
+    CREATE TABLE IF NOT EXISTS telegram_poll_cursor (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  console.log("[db] migrations applied");
+}
+
+// --- User mapping ---
+
+export interface TelegramUser {
+  telegram_chat_id: string;
+  telegram_username: string | null;
+  telegram_display_name: string | null;
+  paperclip_user_id: string | null;
+  paperclip_company_id: string | null;
+  role: string;
+}
+
+export async function getUser(chatId: string): Promise<TelegramUser | null> {
+  const { rows } = await pool.query(
+    "SELECT * FROM telegram_user_map WHERE telegram_chat_id = $1",
+    [chatId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function upsertUser(user: Partial<TelegramUser> & { telegram_chat_id: string }) {
+  await pool.query(
+    `INSERT INTO telegram_user_map (telegram_chat_id, telegram_username, telegram_display_name, paperclip_user_id, paperclip_company_id, role)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (telegram_chat_id) DO UPDATE SET
+       telegram_username = COALESCE(EXCLUDED.telegram_username, telegram_user_map.telegram_username),
+       telegram_display_name = COALESCE(EXCLUDED.telegram_display_name, telegram_user_map.telegram_display_name),
+       paperclip_user_id = COALESCE(EXCLUDED.paperclip_user_id, telegram_user_map.paperclip_user_id),
+       paperclip_company_id = COALESCE(EXCLUDED.paperclip_company_id, telegram_user_map.paperclip_company_id),
+       role = COALESCE(EXCLUDED.role, telegram_user_map.role),
+       updated_at = NOW()`,
+    [
+      user.telegram_chat_id,
+      user.telegram_username ?? null,
+      user.telegram_display_name ?? null,
+      user.paperclip_user_id ?? null,
+      user.paperclip_company_id ?? null,
+      user.role ?? "member",
+    ]
+  );
+}
+
+export async function deleteUser(chatId: string) {
+  await pool.query("DELETE FROM telegram_user_map WHERE telegram_chat_id = $1", [chatId]);
+}
+
+export async function getAllUsers(): Promise<TelegramUser[]> {
+  const { rows } = await pool.query("SELECT * FROM telegram_user_map");
+  return rows;
+}
+
+// --- Message mapping ---
+
+export async function saveMessageMap(entry: {
+  telegram_chat_id: string;
+  telegram_message_id: string;
+  direction: "inbound" | "outbound";
+  paperclip_issue_id?: string;
+  paperclip_comment_id?: string;
+  paperclip_company_id?: string;
+  raw_text?: string;
+}) {
+  await pool.query(
+    `INSERT INTO telegram_message_map
+       (telegram_chat_id, telegram_message_id, direction, paperclip_issue_id, paperclip_comment_id, paperclip_company_id, raw_text)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      entry.telegram_chat_id,
+      entry.telegram_message_id,
+      entry.direction,
+      entry.paperclip_issue_id ?? null,
+      entry.paperclip_comment_id ?? null,
+      entry.paperclip_company_id ?? null,
+      entry.raw_text ?? null,
+    ]
+  );
+}
+
+export async function getRecentChatContext(chatId: string, limit = 20): Promise<Array<{
+  direction: string;
+  raw_text: string;
+  paperclip_issue_id: string | null;
+  created_at: Date;
+}>> {
+  const { rows } = await pool.query(
+    `SELECT direction, raw_text, paperclip_issue_id, created_at
+     FROM telegram_message_map
+     WHERE telegram_chat_id = $1
+     ORDER BY created_at DESC LIMIT $2`,
+    [chatId, limit]
+  );
+  return rows.reverse();
+}
+
+// --- Poll cursor ---
+
+export async function getCursor(key: string): Promise<string | null> {
+  const { rows } = await pool.query(
+    "SELECT value FROM telegram_poll_cursor WHERE key = $1",
+    [key]
+  );
+  return rows[0]?.value ?? null;
+}
+
+export async function setCursor(key: string, value: string) {
+  await pool.query(
+    `INSERT INTO telegram_poll_cursor (key, value, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [key, value]
+  );
+}
+
+// --- Direct Paperclip DB queries for event polling ---
+
+export async function getNewIssueComments(since: string): Promise<Array<{
+  id: string;
+  issue_id: string;
+  company_id: string;
+  body: string;
+  author_agent_id: string | null;
+  author_user_id: string | null;
+  created_at: string;
+  issue_title: string;
+  issue_identifier: string;
+}>> {
+  const { rows } = await pool.query(
+    `SELECT ic.id, ic.issue_id, i.company_id, ic.body,
+            ic.author_agent_id, ic.author_user_id, ic.created_at,
+            i.title as issue_title, i.identifier as issue_identifier
+     FROM issue_comments ic
+     JOIN issues i ON i.id = ic.issue_id
+     WHERE ic.created_at > $1
+       AND ic.author_agent_id IS NOT NULL
+     ORDER BY ic.created_at ASC
+     LIMIT 50`,
+    [since]
+  );
+  return rows;
+}
+
+export async function getNewApprovals(since: string): Promise<Array<{
+  id: string;
+  company_id: string;
+  type: string;
+  status: string;
+  payload: Record<string, unknown>;
+  requested_by_agent_id: string | null;
+  created_at: string;
+}>> {
+  const { rows } = await pool.query(
+    `SELECT id, company_id, type, status, payload,
+            requested_by_agent_id, created_at
+     FROM approvals
+     WHERE created_at > $1 AND status = 'pending'
+     ORDER BY created_at ASC
+     LIMIT 50`,
+    [since]
+  );
+  return rows;
+}
+
+export async function getAgentName(agentId: string): Promise<string> {
+  const { rows } = await pool.query(
+    "SELECT name FROM agents WHERE id = $1",
+    [agentId]
+  );
+  return rows[0]?.name ?? "Unknown Agent";
+}
+
+export async function getCompanyName(companyId: string): Promise<string> {
+  const { rows } = await pool.query(
+    "SELECT name FROM companies WHERE id = $1",
+    [companyId]
+  );
+  return rows[0]?.name ?? "Unknown Company";
+}
+
+export { pool };
