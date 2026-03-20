@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { accessApi } from "../api/access";
 import { activityApi } from "../api/activity";
 import { agentsApi } from "../api/agents";
 import { issuesApi } from "../api/issues";
@@ -60,11 +61,23 @@ export function Activity() {
     enabled: !!selectedCompanyId,
   });
 
+  const { data: users } = useQuery({
+    queryKey: queryKeys.access.users(selectedCompanyId!),
+    queryFn: () => accessApi.listUsers(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
   const agentMap = useMemo(() => {
     const map = new Map<string, Agent>();
     for (const a of agents ?? []) map.set(a.id, a);
     return map;
   }, [agents]);
+
+  const userMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of users ?? []) map.set(u.id, u.name);
+    return map;
+  }, [users]);
 
   const entityNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -129,6 +142,7 @@ export function Activity() {
               key={event.id}
               event={event}
               agentMap={agentMap}
+              userMap={userMap}
               entityNameMap={entityNameMap}
               entityTitleMap={entityTitleMap}
             />

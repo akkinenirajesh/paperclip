@@ -74,9 +74,12 @@ export function currentUserAssigneeOption(currentUserId: string | null | undefin
 export function formatAssigneeUserLabel(
   userId: string | null | undefined,
   currentUserId: string | null | undefined,
+  userNameMap?: Map<string, string>,
 ): string | null {
   if (!userId) return null;
   if (currentUserId && userId === currentUserId) return "Me";
-  if (userId === "local-board") return "Board";
+  const name = userNameMap?.get(userId);
+  if (name) return name;
+  if (userId === "local-board") return "You";
   return userId.slice(0, 5);
 }

@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  authUsers,
   companyMemberships,
   instanceUserRoles,
   principalPermissionGrants,
@@ -95,6 +96,25 @@ export function accessService(db: Db) {
         ),
       )
       .orderBy(sql`${companyMemberships.createdAt} asc`);
+  }
+
+  async function listHumanMembers(companyId: string): Promise<Array<{ id: string; name: string }>> {
+    const rows = await db
+      .select({
+        id: authUsers.id,
+        name: authUsers.name,
+      })
+      .from(companyMemberships)
+      .innerJoin(authUsers, eq(companyMemberships.principalId, authUsers.id))
+      .where(
+        and(
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.status, "active"),
+        ),
+      )
+      .orderBy(authUsers.name);
+    return rows;
   }
 
   async function setMemberPermissions(
@@ -368,6 +388,7 @@ export function accessService(db: Db) {
     listMembers,
     listActiveUserMemberships,
     copyActiveUserMemberships,
+    listHumanMembers,
     setMemberPermissions,
     promoteInstanceAdmin,
     demoteInstanceAdmin,

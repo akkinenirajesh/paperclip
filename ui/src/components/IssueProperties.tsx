@@ -3,6 +3,7 @@ import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Link } from "@/lib/router";
 import type { Issue } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { accessApi } from "../api/access";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { issuesApi } from "../api/issues";
@@ -142,6 +143,18 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
     enabled: !!companyId,
   });
 
+  const { data: companyUsers } = useQuery({
+    queryKey: queryKeys.access.users(companyId!),
+    queryFn: () => accessApi.listUsers(companyId!),
+    enabled: !!companyId,
+  });
+
+  const userNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of companyUsers ?? []) map.set(u.id, u.name);
+    return map;
+  }, [companyUsers]);
+
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(companyId!),
     queryFn: () => projectsApi.list(companyId!),
@@ -218,7 +231,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const assignee = issue.assigneeAgentId
     ? agents?.find((a) => a.id === issue.assigneeAgentId)
     : null;
-  const userLabel = (userId: string | null | undefined) => formatAssigneeUserLabel(userId, currentUserId);
+  const userLabel = (userId: string | null | undefined) => formatAssigneeUserLabel(userId, currentUserId, userNameMap);
   const assigneeUserLabel = userLabel(issue.assigneeUserId);
   const creatorUserLabel = userLabel(issue.createdByUserId);
 
@@ -384,6 +397,25 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
             {creatorUserLabel ? `Assign to ${creatorUserLabel}` : "Assign to requester"}
           </button>
         )}
+        {(companyUsers ?? [])
+          .filter((u) => u.id !== currentUserId && u.id !== issue.createdByUserId)
+          .filter((u) => {
+            if (!assigneeSearch.trim()) return true;
+            return u.name.toLowerCase().includes(assigneeSearch.toLowerCase());
+          })
+          .map((u) => (
+          <button
+            key={u.id}
+            className={cn(
+              "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+              u.id === issue.assigneeUserId && "bg-accent"
+            )}
+            onClick={() => { onUpdate({ assigneeAgentId: null, assigneeUserId: u.id }); setAssigneeOpen(false); }}
+          >
+            <User className="h-3 w-3 shrink-0 text-muted-foreground" />
+            {u.name}
+          </button>
+        ))}
         {sortedAgents
           .filter((a) => {
             if (!assigneeSearch.trim()) return true;

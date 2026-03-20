@@ -8,8 +8,8 @@ import { classifyMessage, generateReply } from "./ai.js";
  * Register all Telegram message and callback handlers on the bot.
  *
  * Whitelisting model:
- *  - First user to /start becomes board admin (bootstrap)
- *  - Only board members can /whitelist other users
+ *  - First user to /start becomes admin (bootstrap)
+ *  - Only admins can /whitelist other users
  *  - Unwhitelisted users get a "not authorized" message with their chat ID
  *  - All privileged commands require whitelisted status
  */
@@ -45,7 +45,7 @@ export function registerHandlers(bot: Bot) {
       return;
     }
 
-    // Check if any users exist — first user becomes board admin
+    // Check if any users exist — first user becomes admin
     const allUsers = await db.getAllUsers();
     if (allUsers.length === 0) {
       await db.upsertUser({
@@ -60,10 +60,10 @@ export function registerHandlers(bot: Bot) {
         ? `\n\nAuto-linked to your company.`
         : `\n\nUse /companies then /link &lt;company_id&gt; to connect.`;
       await ctx.reply(
-        `🎉 <b>You are the first user — registered as board admin!</b>${linkMsg}\n\n` +
+        `🎉 <b>You are the first user — registered as admin!</b>${linkMsg}\n\n` +
         `To add team members, have them message this bot, then use:\n` +
         `<code>/whitelist &lt;chat_id&gt; &lt;role&gt;</code>\n\n` +
-        `Roles: <b>board</b> (approvals + all notifications) or <b>member</b> (company notifications)`,
+        `Roles: <b>board</b> (admin — approvals + all notifications) or <b>member</b> (company notifications)`,
         { parse_mode: "HTML" }
       );
       return;
@@ -72,7 +72,7 @@ export function registerHandlers(bot: Bot) {
     // Not the first user — show chat ID and ask them to get whitelisted
     await ctx.reply(
       `Hi ${displayName}! This bot is restricted.\n\n` +
-      `Ask your board admin to whitelist you with:\n` +
+      `Ask your admin to whitelist you with:\n` +
       `<code>/whitelist ${chatId} member</code>\n\n` +
       `Your chat ID: <code>${chatId}</code>`,
       { parse_mode: "HTML" }
@@ -83,7 +83,7 @@ export function registerHandlers(bot: Bot) {
   bot.command("whitelist", async (ctx) => {
     const caller = await db.getUser(String(ctx.chat.id));
     if (!caller || caller.role !== "board") {
-      await ctx.reply("⛔ Only board members can whitelist users.");
+      await ctx.reply("⛔ Only admins can whitelist users.");
       return;
     }
 
@@ -116,7 +116,7 @@ export function registerHandlers(bot: Bot) {
   bot.command("revoke", async (ctx) => {
     const caller = await db.getUser(String(ctx.chat.id));
     if (!caller || caller.role !== "board") {
-      await ctx.reply("⛔ Only board members can revoke users.");
+      await ctx.reply("⛔ Only admins can revoke users.");
       return;
     }
 
@@ -134,7 +134,7 @@ export function registerHandlers(bot: Bot) {
   bot.command("members", async (ctx) => {
     const caller = await db.getUser(String(ctx.chat.id));
     if (!caller || caller.role !== "board") {
-      await ctx.reply("⛔ Only board members can view members.");
+      await ctx.reply("⛔ Only admins can view members.");
       return;
     }
 
@@ -157,10 +157,53 @@ export function registerHandlers(bot: Bot) {
     return db.getUser(chatId);
   }
 
+  // --- /tasks command: show pending tasks ---
+  bot.command("tasks", async (ctx) => {
+    const user = await isWhitelisted(String(ctx.chat.id));
+    if (!user) {
+      await ctx.reply("⛔ You're not authorized. Ask an admin to /whitelist you.");
+      return;
+    }
+
+    const companyId = user.paperclip_company_id ?? (await tryAutoLink(String(ctx.chat.id)));
+    if (!companyId) {
+      await ctx.reply("You're not linked to a company yet. Use /companies then /link <company_id>.");
+      return;
+    }
+
+    const pendingApprovals = await db.getNewApprovals(
+      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    );
+    const unansweredQuestions = await db.getUnansweredAgentQuestions(companyId);
+
+    const totalPending = pendingApprovals.length + unansweredQuestions.length;
+    if (totalPending === 0) {
+      await ctx.reply("✅ No pending tasks — you're all caught up!");
+      return;
+    }
+
+    const lines: string[] = [`📋 <b>Your pending tasks (${totalPending}):</b>\n`];
+    let idx = 1;
+
+    for (const a of pendingApprovals) {
+      const payload = a.payload as Record<string, unknown>;
+      const title = (payload?.title as string) ?? a.type;
+      lines.push(`${idx}. ✅ <b>APPROVAL:</b> ${title}`);
+      idx++;
+    }
+
+    for (const q of unansweredQuestions) {
+      lines.push(`${idx}. ❓ <b>QUESTION</b> from ${q.agent_name} on ${q.issue_identifier}: "${q.body.slice(0, 80)}"`);
+      idx++;
+    }
+
+    await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+  });
+
   // --- /status command ---
   bot.command("status", async (ctx) => {
     if (!await isWhitelisted(String(ctx.chat.id))) {
-      await ctx.reply("⛔ You're not authorized. Ask a board admin to /whitelist you.");
+      await ctx.reply("⛔ You're not authorized. Ask a admin to /whitelist you.");
       return;
     }
     try {
@@ -216,7 +259,7 @@ export function registerHandlers(bot: Bot) {
   bot.on("callback_query:data", async (ctx) => {
     const user = await isWhitelisted(String(ctx.from.id));
     if (!user || user.role !== "board") {
-      await ctx.answerCallbackQuery({ text: "⛔ Only board members can act on approvals" });
+      await ctx.answerCallbackQuery({ text: "⛔ Only admins can act on approvals" });
       return;
     }
 
@@ -261,7 +304,7 @@ export function registerHandlers(bot: Bot) {
     let user = await isWhitelisted(chatId);
     if (!user) {
       await ctx.reply(
-        `⛔ You're not authorized.\n\nYour chat ID: <code>${chatId}</code>\nAsk a board admin to whitelist you.`,
+        `⛔ You're not authorized.\n\nYour chat ID: <code>${chatId}</code>\nAsk an admin to whitelist you.`,
         { parse_mode: "HTML" }
       );
       return;
@@ -280,6 +323,34 @@ export function registerHandlers(bot: Bot) {
     }
     const companyId = user.paperclip_company_id!;
     const companyPrefix = await db.getCompanyPrefix(companyId);
+
+    // --- Direct reply-to routing: skip AI classifier ---
+    const replyToMsg = ctx.message.reply_to_message;
+    if (replyToMsg) {
+      const mapped = await db.getMessageMapByTelegramId(chatId, String(replyToMsg.message_id));
+      if (mapped?.paperclip_issue_id && mapped.paperclip_company_id) {
+        try {
+          await db.createIssueComment(mapped.paperclip_company_id, mapped.paperclip_issue_id, messageText);
+          await db.saveMessageMap({
+            telegram_chat_id: chatId,
+            telegram_message_id: String(ctx.message.message_id),
+            direction: "inbound",
+            paperclip_issue_id: mapped.paperclip_issue_id,
+            paperclip_company_id: mapped.paperclip_company_id,
+            raw_text: messageText,
+          });
+          await db.triggerHeartbeat(mapped.paperclip_company_id);
+          await ctx.reply("💬 Comment added to issue.", {
+            parse_mode: "HTML",
+            link_preview_options: { is_disabled: true },
+          });
+        } catch (err) {
+          console.error("[handler] direct reply comment failed:", err);
+          await ctx.reply("⚠️ Failed to add comment. Please try again.");
+        }
+        return;
+      }
+    }
 
     // Save inbound message
     await db.saveMessageMap({
@@ -390,7 +461,7 @@ export function registerHandlers(bot: Bot) {
           break;
         }
         if (user.role !== "board") {
-          reply = "⛔ Only board members can act on approvals.";
+          reply = "⛔ Only admins can act on approvals.";
           break;
         }
         try {
@@ -444,7 +515,7 @@ export function registerHandlers(bot: Bot) {
       }
 
       default: {
-        reply = await generateReply(messageText, chatContext, "General conversation with board/team member.");
+        reply = await generateReply(messageText, chatContext, "General conversation with team member.");
         break;
       }
     }

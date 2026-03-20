@@ -48,7 +48,7 @@ describe("assignee selection helpers", () => {
 
   it("formats current and board user labels consistently", () => {
     expect(formatAssigneeUserLabel("user-1", "user-1")).toBe("Me");
-    expect(formatAssigneeUserLabel("local-board", "someone-else")).toBe("Board");
+    expect(formatAssigneeUserLabel("local-board", "someone-else")).toBe("You");
     expect(formatAssigneeUserLabel("user-abcdef", "someone-else")).toBe("user-");
   });
 
@@ -88,5 +88,12 @@ describe("assignee selection helpers", () => {
         "agent-self",
       ),
     ).toBe("agent:agent-123");
+  });
+
+  it("resolves user name from userNameMap", () => {
+    const userMap = new Map([["user-abcdef", "Rajesh"]]);
+    expect(formatAssigneeUserLabel("user-abcdef", "someone-else", userMap)).toBe("Rajesh");
+    // Still returns "Me" for current user even if in map
+    expect(formatAssigneeUserLabel("user-1", "user-1", userMap)).toBe("Me");
   });
 });

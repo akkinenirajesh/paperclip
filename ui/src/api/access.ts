@@ -92,7 +92,15 @@ type CompanyInviteCreated = {
   inviteMessage?: string | null;
 };
 
+export type CompanyUser = {
+  id: string;
+  name: string;
+};
+
 export const accessApi = {
+  listUsers: (companyId: string) =>
+    api.get<CompanyUser[]>(`/companies/${companyId}/users`),
+
   createCompanyInvite: (
     companyId: string,
     input: {

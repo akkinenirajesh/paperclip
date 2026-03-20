@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { accessApi } from "../api/access";
 import { issuesApi } from "../api/issues";
 import { authApi } from "../api/auth";
 import { queryKeys } from "../lib/queryKeys";
@@ -237,6 +238,18 @@ export function IssuesList({
   });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
 
+  const { data: companyUsers } = useQuery({
+    queryKey: queryKeys.access.users(selectedCompanyId!),
+    queryFn: () => accessApi.listUsers(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const userNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of companyUsers ?? []) map.set(u.id, u.name);
+    return map;
+  }, [companyUsers]);
+
   // Scope the storage key per company so folding/view state is independent across companies.
   const scopedKey = selectedCompanyId ? `${viewStateKey}:${selectedCompanyId}` : viewStateKey;
 
@@ -337,7 +350,7 @@ export function IssuesList({
         key === "__unassigned"
           ? "Unassigned"
           : key.startsWith("__user:")
-            ? (formatAssigneeUserLabel(key.slice("__user:".length), currentUserId) ?? "User")
+            ? (formatAssigneeUserLabel(key.slice("__user:".length), currentUserId, userNameMap) ?? "User")
             : (agentName(key) ?? key.slice(0, 8)),
       items: groups[key]!,
     }));
@@ -793,7 +806,7 @@ export function IssuesList({
                                 <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">
                                   <User className="h-3 w-3" />
                                 </span>
-                                {formatAssigneeUserLabel(issue.assigneeUserId, currentUserId) ?? "User"}
+                                {formatAssigneeUserLabel(issue.assigneeUserId, currentUserId, userNameMap) ?? "User"}
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">

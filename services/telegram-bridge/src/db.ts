@@ -399,4 +399,49 @@ export async function getIssueTitle(issueId: string): Promise<string> {
   return rows[0] ? `${rows[0].identifier}: ${rows[0].title}` : "Unknown issue";
 }
 
+/** Look up an outbound message by its Telegram chat + message ID (for reply-to routing) */
+export async function getMessageMapByTelegramId(chatId: string, messageId: string): Promise<{
+  paperclip_issue_id: string | null;
+  paperclip_company_id: string | null;
+} | null> {
+  const { rows } = await pool.query(
+    `SELECT paperclip_issue_id, paperclip_company_id
+     FROM telegram_message_map
+     WHERE telegram_chat_id = $1 AND telegram_message_id = $2 AND direction = 'outbound'
+     LIMIT 1`,
+    [chatId, messageId]
+  );
+  return rows[0] ?? null;
+}
+
+/** Find agent comments with '?' that have no subsequent human reply */
+export async function getUnansweredAgentQuestions(companyId: string): Promise<Array<{
+  id: string;
+  issue_id: string;
+  body: string;
+  agent_name: string;
+  issue_identifier: string;
+  created_at: string;
+}>> {
+  const { rows } = await pool.query(
+    `SELECT ic.id, ic.issue_id, ic.body, a.name as agent_name, i.identifier as issue_identifier, ic.created_at
+     FROM issue_comments ic
+     JOIN agents a ON a.id = ic.author_agent_id
+     JOIN issues i ON i.id = ic.issue_id
+     WHERE i.company_id = $1
+       AND ic.author_agent_id IS NOT NULL
+       AND ic.body LIKE '%?%'
+       AND NOT EXISTS (
+         SELECT 1 FROM issue_comments later
+         WHERE later.issue_id = ic.issue_id
+           AND later.author_user_id IS NOT NULL
+           AND later.created_at > ic.created_at
+       )
+     ORDER BY ic.created_at DESC
+     LIMIT 20`,
+    [companyId]
+  );
+  return rows;
+}
+
 export { pool };

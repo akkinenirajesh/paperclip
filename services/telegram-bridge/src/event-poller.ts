@@ -7,6 +7,8 @@ import { formatNotification } from "./ai.js";
  * Polls Paperclip's database for new events (comments from agents, new approvals)
  * and forwards them to mapped Telegram users.
  */
+const DIGEST_INTERVAL_MS = 8 * 60 * 60 * 1000; // 8 hours
+
 export function startEventPoller(bot: Bot) {
   let running = true;
 
@@ -22,7 +24,19 @@ export function startEventPoller(bot: Bot) {
     }
   }
 
+  async function digestLoop() {
+    while (running) {
+      await sleep(DIGEST_INTERVAL_MS);
+      try {
+        await pollTaskDigest(bot);
+      } catch (err) {
+        console.error("[poller] digest error:", err);
+      }
+    }
+  }
+
   poll();
+  digestLoop();
 
   return { stop: () => { running = false; } };
 }
@@ -52,7 +66,8 @@ async function pollAgentComments(bot: Bot) {
     const companyName = await db.getCompanyName(comment.company_id);
     const prefix = await db.getCompanyPrefix(comment.company_id);
 
-    const message = await formatNotification({
+    const isQuestion = comment.body.includes("?");
+    const rawMessage = await formatNotification({
       type: "agent_comment",
       agentName,
       companyName,
@@ -61,6 +76,9 @@ async function pollAgentComments(bot: Bot) {
       body: comment.body.slice(0, 1000),
       publicUrl: `${config.paperclipPublicUrl}/${prefix}/issues/${comment.issue_id}`,
     });
+    const message = isQuestion
+      ? `🔔 <b>ACTION NEEDED</b>\n\n${rawMessage}\n\n💬 <i>Reply to this message to answer</i>`
+      : rawMessage;
 
     for (const recipient of recipients) {
       try {
@@ -101,7 +119,7 @@ async function pollApprovals(bot: Bot) {
   if (approvals.length === 0) return;
 
   const users = await db.getAllUsers();
-  const boardMembers = users.filter((u) => u.role === "board");
+  const admins = users.filter((u) => u.role === "board");
 
   for (const approval of approvals) {
     const agentName = approval.requested_by_agent_id
@@ -127,7 +145,7 @@ async function pollApprovals(bot: Bot) {
     const shortApproval = approval.id.replace(/-/g, "").slice(0, 12);
     await db.saveCallbackMap(shortApproval, approval.company_id, approval.id);
 
-    for (const member of boardMembers) {
+    for (const member of admins) {
       try {
         const sent = await bot.api.sendMessage(member.telegram_chat_id, message, {
           parse_mode: "HTML",
@@ -153,7 +171,7 @@ async function pollApprovals(bot: Bot) {
           raw_text: message,
         });
       } catch (err) {
-        console.error(`[poller] failed to notify board member ${member.telegram_chat_id}:`, err);
+        console.error(`[poller] failed to notify admin ${member.telegram_chat_id}:`, err);
       }
     }
   }
@@ -161,6 +179,48 @@ async function pollApprovals(bot: Bot) {
   // Advance cursor only after all sends complete
   const lastApprovalTs = new Date(new Date(approvals[approvals.length - 1].created_at).getTime() + 1);
   await db.setCursor("last_approval_ts", lastApprovalTs.toISOString());
+}
+
+async function pollTaskDigest(bot: Bot) {
+  const users = await db.getAllUsers();
+  const admins = users.filter((u) => u.role === "board");
+
+  for (const admin of admins) {
+    if (!admin.paperclip_company_id) continue;
+    const companyId = admin.paperclip_company_id;
+
+    const pendingApprovals = await db.getNewApprovals(
+      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    );
+    const unansweredQuestions = await db.getUnansweredAgentQuestions(companyId);
+
+    const totalPending = pendingApprovals.length + unansweredQuestions.length;
+    if (totalPending === 0) continue;
+
+    const lines: string[] = [`📋 <b>Your pending tasks (${totalPending}):</b>\n`];
+    let idx = 1;
+
+    for (const a of pendingApprovals) {
+      const payload = a.payload as Record<string, unknown>;
+      const title = (payload?.title as string) ?? a.type;
+      lines.push(`${idx}. ✅ <b>APPROVAL:</b> ${title}`);
+      idx++;
+    }
+
+    for (const q of unansweredQuestions) {
+      lines.push(`${idx}. ❓ <b>QUESTION</b> from ${q.agent_name} on ${q.issue_identifier}: "${q.body.slice(0, 80)}"`);
+      idx++;
+    }
+
+    try {
+      await bot.api.sendMessage(admin.telegram_chat_id, lines.join("\n"), {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+      });
+    } catch (err) {
+      console.error(`[poller] failed to send digest to ${admin.telegram_chat_id}:`, err);
+    }
+  }
 }
 
 function sleep(ms: number) {

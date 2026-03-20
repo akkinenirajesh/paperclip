@@ -951,8 +951,30 @@ export function Inbox() {
     .map((issue) => issue.id);
   const canMarkAllRead = unreadIssueIds.length > 0;
 
+  const attentionParts: string[] = [];
+  if (actionableApprovals.length > 0) {
+    attentionParts.push(`${actionableApprovals.length} approval${actionableApprovals.length === 1 ? "" : "s"}`);
+  }
+  if (failedRuns.length > 0) {
+    attentionParts.push(`${failedRuns.length} failed run${failedRuns.length === 1 ? "" : "s"}`);
+  }
+  if (joinRequests.length > 0) {
+    attentionParts.push(`${joinRequests.length} join request${joinRequests.length === 1 ? "" : "s"}`);
+  }
+  const attentionTotal = actionableApprovals.length + failedRuns.length + joinRequests.length;
+
   return (
     <div className="space-y-6">
+      {allLoaded && attentionTotal > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2.5 text-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-600 dark:text-yellow-400" />
+          <span>
+            <span className="font-medium">{attentionTotal} item{attentionTotal === 1 ? "" : "s"}</span>
+            {" "}need{attentionTotal === 1 ? "s" : ""} your attention: {attentionParts.join(", ")}
+          </span>
+        </div>
+      )}
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>

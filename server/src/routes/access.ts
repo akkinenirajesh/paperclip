@@ -2823,6 +2823,13 @@ export function accessRoutes(
     res.json(members);
   });
 
+  router.get("/companies/:companyId/users", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const users = await access.listHumanMembers(companyId);
+    res.json(users);
+  });
+
   router.patch(
     "/companies/:companyId/members/:memberId/permissions",
     validate(updateMemberPermissionsSchema),

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
+import { accessApi } from "../api/access";
 import { dashboardApi } from "../api/dashboard";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
@@ -43,6 +44,12 @@ export function Dashboard() {
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: companyUsers } = useQuery({
+    queryKey: queryKeys.access.users(selectedCompanyId!),
+    queryFn: () => accessApi.listUsers(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -143,6 +150,12 @@ export function Dashboard() {
     for (const a of agents ?? []) map.set(a.id, a);
     return map;
   }, [agents]);
+
+  const userMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of companyUsers ?? []) map.set(u.id, u.name);
+    return map;
+  }, [companyUsers]);
 
   const entityNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -318,6 +331,7 @@ export function Dashboard() {
                       key={event.id}
                       event={event}
                       agentMap={agentMap}
+                      userMap={userMap}
                       entityNameMap={entityNameMap}
                       entityTitleMap={entityTitleMap}
                       className={animatedActivityIds.has(event.id) ? "activity-row-enter" : undefined}
