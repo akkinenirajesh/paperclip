@@ -78,7 +78,15 @@ Headers: X-Paperclip-Run-Id: {runId}
 { "status": "done", "comment": "What was done and why." }
 ```
 
-If blocked:
+If blocked and only a human can unblock it, reassign to the board operator:
+
+```
+PATCH /api/issues/{issueId}
+Headers: X-Paperclip-Run-Id: {runId}
+{ "status": "blocked", "assigneeUserId": "{boardUserId}", "comment": "What is blocked, why, and what the human needs to do." }
+```
+
+If blocked but another agent can unblock it:
 
 ```
 PATCH /api/issues/{issueId}
