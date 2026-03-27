@@ -952,6 +952,7 @@ export function Inbox() {
   const canMarkAllRead = unreadIssueIds.length > 0;
 
   const attentionParts: string[] = [];
+  const actionableApprovals = (approvals ?? []).filter((a) => a.status === "pending");
   if (actionableApprovals.length > 0) {
     attentionParts.push(`${actionableApprovals.length} approval${actionableApprovals.length === 1 ? "" : "s"}`);
   }
