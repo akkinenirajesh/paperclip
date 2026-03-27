@@ -164,4 +164,34 @@ export const accessApi = {
 
   cancelCliAuthChallenge: (id: string, token: string) =>
     api.post<{ cancelled: boolean; status: string }>(`/cli-auth/challenges/${id}/cancel`, { token }),
+
+  updateMemberOrgPosition: (
+    companyId: string,
+    membershipId: string,
+    data: { orgRole: string; orgReportsTo?: string | null; orgTitle?: string | null },
+  ) =>
+    api.patch<{ ok: true }>(
+      `/companies/${companyId}/members/${membershipId}/org-position`,
+      data,
+    ),
+
+  removeMemberOrgPosition: (companyId: string, membershipId: string) =>
+    api.delete<{ ok: true }>(
+      `/companies/${companyId}/members/${membershipId}/org-position`,
+    ),
+
+  linkPlaceholderToUser: (companyId: string, membershipId: string, userId: string) =>
+    api.post<{ ok: true }>(
+      `/companies/${companyId}/members/${membershipId}/link-user`,
+      { userId },
+    ),
+
+  createPlaceholderMember: (
+    companyId: string,
+    data: { displayName: string; orgRole: string; orgReportsTo?: string | null; orgTitle?: string | null },
+  ) =>
+    api.post<Record<string, unknown>>(
+      `/companies/${companyId}/members/placeholder`,
+      data,
+    ),
 };

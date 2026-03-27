@@ -7,6 +7,7 @@ declare global {
         type: "board" | "agent" | "none";
         userId?: string;
         agentId?: string;
+        agentRole?: string;
         companyId?: string;
         companyIds?: string[];
         isInstanceAdmin?: boolean;

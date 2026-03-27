@@ -10,10 +10,12 @@ import {
 import { validate } from "../middleware/validate.js";
 import { logger } from "../middleware/logger.js";
 import {
+  agentService,
   approvalService,
   heartbeatService,
   issueApprovalService,
   logActivity,
+  notifyHireApproved,
   secretService,
 } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -29,6 +31,7 @@ function redactApprovalPayload<T extends { payload: Record<string, unknown> }>(a
 export function approvalRoutes(db: Db) {
   const router = Router();
   const svc = approvalService(db);
+  const agentSvc = agentService(db);
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
   const secretsSvc = secretService(db);
@@ -131,6 +134,25 @@ export function approvalRoutes(db: Db) {
       const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
       const linkedIssueIds = linkedIssues.map((issue) => issue.id);
       const primaryIssueId = linkedIssueIds[0] ?? null;
+
+      // For hire_agent approvals, activate the pending agent
+      if (approval.type === "hire_agent") {
+        const hiredAgentId = (approval.payload as Record<string, unknown>)?.agentId;
+        if (typeof hiredAgentId === "string") {
+          try {
+            await agentSvc.activatePendingApproval(hiredAgentId);
+            logger.info({ approvalId: approval.id, agentId: hiredAgentId }, "activated hired agent");
+            await notifyHireApproved(db, {
+              companyId: approval.companyId,
+              agentId: hiredAgentId,
+              source: "approval",
+              sourceId: approval.id,
+            });
+          } catch (err) {
+            logger.warn({ err, approvalId: approval.id, agentId: hiredAgentId }, "failed to activate hired agent");
+          }
+        }
+      }
 
       await logActivity(db, {
         companyId: approval.companyId,

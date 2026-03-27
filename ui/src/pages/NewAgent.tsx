@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { agentsApi } from "../api/agents";
+import { agentsApi, type OrgNode } from "../api/agents";
 import { companySkillsApi } from "../api/companySkills";
 import { queryKeys } from "../lib/queryKeys";
 import { AGENT_ROLES } from "@paperclipai/shared";
@@ -77,6 +77,12 @@ export function NewAgent() {
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: orgTree } = useQuery({
+    queryKey: queryKeys.org(selectedCompanyId!),
+    queryFn: () => agentsApi.org(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -209,6 +215,21 @@ export function NewAgent() {
     });
   }
 
+  // Flatten org tree to get both agents and humans for "reports to" dropdown
+  const flattenOrg = (nodes: OrgNode[]): Array<{ id: string; name: string; role: string; kind: string; icon?: string }> => {
+    const result: Array<{ id: string; name: string; role: string; kind: string; icon?: string }> = [];
+    for (const node of nodes) {
+      result.push({ id: node.id, name: node.name, role: node.role, kind: node.kind ?? "agent" });
+      if (node.reports?.length) result.push(...flattenOrg(node.reports));
+    }
+    return result;
+  };
+  const orgMembers = flattenOrg(orgTree ?? []);
+
+  // For display, find from agents first (has icon), then org members
+  const currentReportsTo = (agents ?? []).find((a) => a.id === reportsTo)
+    ?? (orgMembers.find((m) => m.id === reportsTo) as any);
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
@@ -271,12 +292,60 @@ export function NewAgent() {
             </PopoverContent>
           </Popover>
 
-          <ReportsToPicker
-            agents={agents ?? []}
-            value={reportsTo}
-            onChange={setReportsTo}
-            disabled={isFirstAgent}
-          />
+          <Popover open={reportsToOpen} onOpenChange={setReportsToOpen}>
+            <PopoverTrigger asChild>
+              <button
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors",
+                  isFirstAgent && "opacity-60 cursor-not-allowed"
+                )}
+                disabled={isFirstAgent}
+              >
+                {currentReportsTo ? (
+                  <>
+                    <AgentIcon icon={currentReportsTo.icon} className="h-3 w-3 text-muted-foreground" />
+                    {`Reports to ${currentReportsTo.name}`}
+                  </>
+                ) : (
+                  <>
+                    <User className="h-3 w-3 text-muted-foreground" />
+                    {isFirstAgent ? "Reports to: N/A (CEO)" : "Reports to..."}
+                  </>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-1" align="start">
+              <button
+                className={cn(
+                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                  !reportsTo && "bg-accent"
+                )}
+                onClick={() => { setReportsTo(""); setReportsToOpen(false); }}
+              >
+                No manager
+              </button>
+              {orgMembers.map((m) => (
+                <button
+                  key={m.id}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 truncate",
+                    m.id === reportsTo && "bg-accent"
+                  )}
+                  onClick={() => { setReportsTo(m.id); setReportsToOpen(false); }}
+                >
+                  {m.kind === "human" ? (
+                    <User className="shrink-0 h-3 w-3 text-muted-foreground" />
+                  ) : (
+                    <AgentIcon icon={(agents ?? []).find((a) => a.id === m.id)?.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
+                  )}
+                  {m.name}
+                  <span className="text-muted-foreground ml-auto">
+                    {m.kind === "human" ? m.role : (roleLabels[m.role] ?? m.role)}
+                  </span>
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Shared config form */}

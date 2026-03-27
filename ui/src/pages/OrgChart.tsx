@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@/lib/router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
+import { accessApi, type CompanyUser } from "../api/access";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -10,8 +11,8 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
-import { Download, Network, Upload } from "lucide-react";
-import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
+import { Download, Network, Upload, User, Link2, Trash2, X } from "lucide-react";
+import { AGENT_ROLE_LABELS, HUMAN_ORG_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 
 // Layout constants
 const CARD_W = 200;
@@ -27,6 +28,9 @@ interface LayoutNode {
   name: string;
   role: string;
   status: string;
+  kind?: "human" | "agent";
+  userId?: string;
+  orgTitle?: string;
   x: number;
   y: number;
   children: LayoutNode[];
@@ -64,6 +68,9 @@ function layoutTree(node: OrgNode, x: number, y: number): LayoutNode {
     name: node.name,
     role: node.role,
     status: node.status,
+    kind: node.kind,
+    userId: node.userId,
+    orgTitle: node.orgTitle,
     x: x + (totalW - CARD_W) / 2,
     y,
     children: layoutChildren,
@@ -150,6 +157,8 @@ export function OrgChart() {
     enabled: !!selectedCompanyId,
   });
 
+  const queryClient = useQueryClient();
+
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
@@ -161,6 +170,68 @@ export function OrgChart() {
     for (const a of agents ?? []) m.set(a.id, a);
     return m;
   }, [agents]);
+
+  // Popover state for human nodes
+  const [popoverNodeId, setPopoverNodeId] = useState<string | null>(null);
+  const [linkingNodeId, setLinkingNodeId] = useState<string | null>(null);
+  const [selectedLinkUserId, setSelectedLinkUserId] = useState("");
+
+  const { data: users } = useQuery({
+    queryKey: queryKeys.access.users(selectedCompanyId!),
+    queryFn: () => accessApi.listUsers(selectedCompanyId!),
+    enabled: !!selectedCompanyId && linkingNodeId !== null,
+  });
+
+  // Fetch members to get membership IDs for placeholders
+  const { data: membersList } = useQuery({
+    queryKey: ["access", "members", selectedCompanyId!],
+    queryFn: () =>
+      fetch(`/api/companies/${selectedCompanyId}/members`, { credentials: "include" }).then((r) =>
+        r.ok ? r.json() : [],
+      ),
+    enabled: !!selectedCompanyId && (linkingNodeId !== null || popoverNodeId !== null),
+  });
+
+  const findMembershipForNode = useCallback(
+    (nodeId: string) => {
+      const principalId = nodeId.startsWith("human_") ? nodeId.slice(6) : nodeId;
+      const list = (membersList ?? []) as Array<{ id: string; principalId: string; principalType: string; membershipRole: string | null }>;
+      return list.find((m) => m.principalType === "user" && m.principalId === principalId);
+    },
+    [membersList],
+  );
+
+  const isPlaceholder = useCallback(
+    (nodeId: string) => {
+      const membership = findMembershipForNode(nodeId);
+      return membership?.membershipRole === "placeholder";
+    },
+    [findMembershipForNode],
+  );
+
+  async function handleLinkUser() {
+    if (!selectedCompanyId || !linkingNodeId || !selectedLinkUserId) return;
+    const membership = findMembershipForNode(linkingNodeId);
+    if (!membership) return;
+    try {
+      await accessApi.linkPlaceholderToUser(selectedCompanyId, membership.id, selectedLinkUserId);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.org(selectedCompanyId) });
+      setLinkingNodeId(null);
+      setPopoverNodeId(null);
+      setSelectedLinkUserId("");
+    } catch { /* ignore */ }
+  }
+
+  async function handleRemoveFromOrg(nodeId: string) {
+    if (!selectedCompanyId) return;
+    const membership = findMembershipForNode(nodeId);
+    if (!membership) return;
+    try {
+      await accessApi.removeMemberOrgPosition(selectedCompanyId, membership.id);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.org(selectedCompanyId) });
+      setPopoverNodeId(null);
+    } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Org Chart" }]);
@@ -388,7 +459,8 @@ export function OrgChart() {
         }}
       >
         {allNodes.map((node) => {
-          const agent = agentMap.get(node.id);
+          const isHuman = (node as LayoutNode & { kind?: string }).kind === "human";
+          const agent = isHuman ? undefined : agentMap.get(node.id);
           const dotColor = statusDotColor[node.status] ?? defaultDotColor;
 
           return (
@@ -402,18 +474,31 @@ export function OrgChart() {
                 width: CARD_W,
                 minHeight: CARD_H,
               }}
-              onClick={() => navigate(agent ? agentUrl(agent) : `/agents/${node.id}`)}
+              onClick={() => {
+                if (isHuman) {
+                  setPopoverNodeId(popoverNodeId === node.id ? null : node.id);
+                  setLinkingNodeId(null);
+                } else if (agent) {
+                  navigate(agentUrl(agent));
+                }
+              }}
             >
               <div className="flex items-center px-4 py-3 gap-3">
-                {/* Agent icon + status dot */}
+                {/* Icon + status dot */}
                 <div className="relative shrink-0">
                   <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                    <AgentIcon icon={agent?.icon} className="h-4.5 w-4.5 text-foreground/70" />
+                    {isHuman ? (
+                      <User className="h-4.5 w-4.5 text-foreground/70" />
+                    ) : (
+                      <AgentIcon icon={agent?.icon} className="h-4.5 w-4.5 text-foreground/70" />
+                    )}
                   </div>
-                  <span
-                    className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card"
-                    style={{ backgroundColor: dotColor }}
-                  />
+                  {!isHuman && (
+                    <span
+                      className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card"
+                      style={{ backgroundColor: dotColor }}
+                    />
+                  )}
                 </div>
                 {/* Name + role + adapter type */}
                 <div className="flex flex-col items-start min-w-0 flex-1">
@@ -421,15 +506,75 @@ export function OrgChart() {
                     {node.name}
                   </span>
                   <span className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-                    {agent?.title ?? roleLabel(node.role)}
+                    {isHuman
+                      ? ((node as LayoutNode & { orgTitle?: string }).orgTitle ?? humanRoleLabel(node.role))
+                      : (agent?.title ?? roleLabel(node.role))}
                   </span>
-                  {agent && (
+                  {!isHuman && agent && (
                     <span className="text-[10px] text-muted-foreground/60 font-mono leading-tight mt-1">
                       {adapterLabels[agent.adapterType] ?? agent.adapterType}
                     </span>
                   )}
                 </div>
               </div>
+
+              {/* Human node popover */}
+              {isHuman && popoverNodeId === node.id && (
+                <div
+                  className="absolute left-0 top-full mt-1 z-50 w-56 bg-popover border border-border rounded-md shadow-lg p-2 space-y-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {linkingNodeId === node.id ? (
+                    <div className="space-y-2 p-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium">Link to account</span>
+                        <button
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => setLinkingNodeId(null)}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <select
+                        className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                        value={selectedLinkUserId}
+                        onChange={(e) => setSelectedLinkUserId(e.target.value)}
+                      >
+                        <option value="">Select user...</option>
+                        {(users ?? []).map((u: CompanyUser) => (
+                          <option key={u.id} value={u.id}>{u.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        className="w-full text-xs px-2 py-1 rounded bg-foreground text-background hover:bg-foreground/90 disabled:opacity-50"
+                        disabled={!selectedLinkUserId}
+                        onClick={handleLinkUser}
+                      >
+                        Link
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {isPlaceholder(node.id) && (
+                        <button
+                          className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 transition-colors"
+                          onClick={() => setLinkingNodeId(node.id)}
+                        >
+                          <Link2 className="h-3 w-3" />
+                          Link to account
+                        </button>
+                      )}
+                      <button
+                        className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-destructive/10 text-destructive transition-colors"
+                        onClick={() => handleRemoveFromOrg(node.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Remove from org chart
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -439,8 +584,13 @@ export function OrgChart() {
   );
 }
 
-const roleLabels: Record<string, string> = AGENT_ROLE_LABELS;
+const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
+const humanRoleLabels = HUMAN_ORG_ROLE_LABELS as Record<string, string>;
 
 function roleLabel(role: string): string {
   return roleLabels[role] ?? role;
+}
+
+function humanRoleLabel(role: string): string {
+  return humanRoleLabels[role] ?? role;
 }

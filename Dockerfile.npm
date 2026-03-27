@@ -1,0 +1,27 @@
+FROM node:lts-trixie-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl git \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable
+
+# Install paperclipai CLI and agent runtimes globally
+RUN npm install --global paperclipai@0.3.1 \
+  @anthropic-ai/claude-code@latest \
+  @openai/codex@latest \
+  opencode-ai
+
+# Create data directory
+RUN mkdir -p /paperclip && chown node:node /paperclip
+
+ENV NODE_ENV=production \
+  HOME=/paperclip \
+  HOST=0.0.0.0 \
+  PAPERCLIP_HOME=/paperclip
+
+VOLUME ["/paperclip"]
+EXPOSE 3100
+
+USER node
+CMD ["paperclipai", "run", "--yes"]

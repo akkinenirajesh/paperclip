@@ -108,7 +108,7 @@ If you are unsure about intent, return "new_issue". Never return "general" for a
  */
 export async function formatNotification(event: {
   type: string;
-  agentName: string;
+  agentName?: string;
   companyName: string;
   title?: string;
   body?: string;

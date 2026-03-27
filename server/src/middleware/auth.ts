@@ -134,6 +134,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
       req.actor = {
         type: "agent",
         agentId: claims.sub,
+        agentRole: agentRecord.role ?? undefined,
         companyId: claims.company_id,
         keyId: undefined,
         runId: runIdHeader || claims.run_id || undefined,
@@ -162,6 +163,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
     req.actor = {
       type: "agent",
       agentId: key.agentId,
+      agentRole: agentRecord.role ?? undefined,
       companyId: key.companyId,
       keyId: key.id,
       runId: runIdHeader || undefined,

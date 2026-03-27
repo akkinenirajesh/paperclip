@@ -7,9 +7,11 @@ import { instanceSettingsService, logActivity } from "../services/index.js";
 import { getActorInfo } from "./authz.js";
 
 function assertCanManageInstanceSettings(req: Request) {
-  if (req.actor.type !== "board") {
+  const isBoardOrCeo = req.actor.type === "board" || (req.actor.type === "agent" && req.actor.agentRole === "ceo");
+  if (!isBoardOrCeo) {
     throw forbidden("Board access required");
   }
+  if (req.actor.type === "agent" && req.actor.agentRole === "ceo") return;
   if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) {
     return;
   }

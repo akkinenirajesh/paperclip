@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -8,6 +8,8 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  authUsers,
+  companyMemberships,
   costEvents,
   heartbeatRunEvents,
   heartbeatRuns,
@@ -250,6 +252,24 @@ export function agentService(db: Db) {
   }
 
   async function ensureManager(companyId: string, managerId: string) {
+    // If managerId is a human_* reference, validate the membership exists
+    if (managerId.startsWith("human_")) {
+      const userId = managerId.slice("human_".length);
+      const membership = await db
+        .select({ id: companyMemberships.id })
+        .from(companyMemberships)
+        .where(
+          and(
+            eq(companyMemberships.companyId, companyId),
+            eq(companyMemberships.principalType, "user"),
+            eq(companyMemberships.principalId, userId),
+            eq(companyMemberships.status, "active"),
+          ),
+        )
+        .then((rows: Array<{ id: string }>) => rows[0] ?? null);
+      if (!membership) throw notFound("Human manager not found in company");
+      return null; // No agent row to return
+    }
     const manager = await getById(managerId);
     if (!manager) throw notFound("Manager not found");
     if (manager.companyId !== companyId) {
@@ -318,8 +338,18 @@ export function agentService(db: Db) {
     if (data.reportsTo !== undefined) {
       if (data.reportsTo) {
         await ensureManager(existing.companyId, data.reportsTo);
+        if (data.reportsTo.startsWith("human_")) {
+          (data as any).reportsToUserId = data.reportsTo.slice("human_".length);
+          data.reportsTo = null; // Clear agent FK
+        } else {
+          (data as any).reportsToUserId = null; // Clear user reference
+          await assertNoCycle(id, data.reportsTo);
+        }
+      } else {
+        // Clearing manager
+        (data as any).reportsToUserId = null;
+        await assertNoCycle(id, data.reportsTo);
       }
-      await assertNoCycle(id, data.reportsTo);
     }
 
     if (data.name !== undefined) {
@@ -381,10 +411,21 @@ export function agentService(db: Db) {
 
     getById,
 
-    create: async (companyId: string, data: Omit<typeof agents.$inferInsert, "companyId">) => {
+    create: async (companyId: string, data: Omit<typeof agents.$inferInsert, "companyId"> & { reportsTo?: string | null }) => {
+      let reportsToAgent: string | null = null;
+      let reportsToUser: string | null = null;
+
       if (data.reportsTo) {
         await ensureManager(companyId, data.reportsTo);
+        if (data.reportsTo.startsWith("human_")) {
+          reportsToUser = data.reportsTo.slice("human_".length);
+        } else {
+          reportsToAgent = data.reportsTo;
+        }
       }
+      // Override reportsTo with the resolved values
+      data.reportsTo = reportsToAgent;
+      (data as any).reportsToUserId = reportsToUser;
 
       const existingAgents = await db
         .select({ id: agents.id, name: agents.name, status: agents.status })
@@ -618,11 +659,67 @@ export function agentService(db: Db) {
         .from(agents)
         .where(and(eq(agents.companyId, companyId), ne(agents.status, "terminated")));
       const normalizedRows = rows.map(normalizeAgentRow);
-      const byManager = new Map<string | null, typeof normalizedRows>();
-      for (const row of normalizedRows) {
-        const key = row.reportsTo ?? null;
+
+      // Also fetch human members with an org position (includes placeholders)
+      const humanRows = await db
+        .select({
+          membershipId: companyMemberships.id,
+          userId: companyMemberships.principalId,
+          orgRole: companyMemberships.orgRole,
+          orgReportsTo: companyMemberships.orgReportsTo,
+          orgTitle: companyMemberships.orgTitle,
+          orgDisplayName: companyMemberships.orgDisplayName,
+          userName: authUsers.name,
+        })
+        .from(companyMemberships)
+        .leftJoin(authUsers, eq(companyMemberships.principalId, authUsers.id))
+        .where(
+          and(
+            eq(companyMemberships.companyId, companyId),
+            eq(companyMemberships.principalType, "user"),
+            eq(companyMemberships.status, "active"),
+            isNotNull(companyMemberships.orgRole),
+          ),
+        );
+
+      type OrgEntry = {
+        id: string;
+        name: string;
+        role: string;
+        status: string;
+        reportsTo: string | null;
+        kind: "agent" | "human";
+        userId?: string;
+        orgTitle?: string | null;
+      };
+
+      const entries: OrgEntry[] = normalizedRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        role: row.role,
+        status: row.status,
+        reportsTo: row.reportsTo ?? (row.reportsToUserId ? `human_${row.reportsToUserId}` : null),
+        kind: "agent" as const,
+      }));
+
+      for (const h of humanRows) {
+        entries.push({
+          id: `human_${h.userId}`,
+          name: h.userName ?? h.orgDisplayName ?? "Unknown",
+          role: h.orgRole!,
+          status: "active",
+          reportsTo: h.orgReportsTo ?? null,
+          kind: "human",
+          userId: h.userId,
+          orgTitle: h.orgTitle,
+        });
+      }
+
+      const byManager = new Map<string | null, OrgEntry[]>();
+      for (const entry of entries) {
+        const key = entry.reportsTo ?? null;
         const group = byManager.get(key) ?? [];
-        group.push(row);
+        group.push(entry);
         byManager.set(key, group);
       }
 

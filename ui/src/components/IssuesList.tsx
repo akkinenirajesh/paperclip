@@ -51,7 +51,7 @@ export type IssueViewState = {
 };
 
 const defaultViewState: IssueViewState = {
-  statuses: [],
+  statuses: ["todo", "in_progress", "in_review", "blocked"],
   priorities: [],
   assignees: [],
   labels: [],
@@ -63,8 +63,9 @@ const defaultViewState: IssueViewState = {
   collapsedGroups: [],
 };
 
+const ALL_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"];
 const quickFilterPresets = [
-  { label: "All", statuses: [] as string[] },
+  { label: "All", statuses: ALL_STATUSES },
   { label: "Active", statuses: ["todo", "in_progress", "in_review", "blocked"] },
   { label: "Backlog", statuses: ["backlog"] },
   { label: "Done", statuses: ["done", "cancelled"] },
@@ -74,7 +75,15 @@ const ISSUE_SEARCH_COMMIT_DELAY_MS = 150;
 function getViewState(key: string): IssueViewState {
   try {
     const raw = localStorage.getItem(key);
-    if (raw) return { ...defaultViewState, ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Migrate: old default was statuses:[] (show all). New default is Active.
+      // If saved state has empty statuses, apply the new default.
+      if (Array.isArray(parsed.statuses) && parsed.statuses.length === 0) {
+        parsed.statuses = defaultViewState.statuses;
+      }
+      return { ...defaultViewState, ...parsed };
+    }
   } catch { /* ignore */ }
   return { ...defaultViewState };
 }

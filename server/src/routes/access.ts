@@ -2890,5 +2890,95 @@ export function accessRoutes(
     }
   );
 
+  router.patch(
+    "/companies/:companyId/members/:memberId/org-position",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const memberId = req.params.memberId as string;
+      assertCompanyAccess(req, companyId);
+      if (req.actor.type !== "board" && !(req.actor.type === "agent" && req.actor.agentRole === "ceo")) throw forbidden("Board access required");
+
+      const { orgRole, orgReportsTo, orgTitle } = req.body as {
+        orgRole?: string;
+        orgReportsTo?: string | null;
+        orgTitle?: string | null;
+      };
+      if (!orgRole || typeof orgRole !== "string") {
+        throw badRequest("orgRole is required");
+      }
+
+      const updated = await access.updateMemberOrgPosition(companyId, memberId, {
+        orgRole,
+        orgReportsTo: orgReportsTo ?? null,
+        orgTitle: orgTitle ?? null,
+      });
+      if (!updated) throw notFound("Member not found");
+      res.json({ ok: true });
+    }
+  );
+
+  router.delete(
+    "/companies/:companyId/members/:memberId/org-position",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const memberId = req.params.memberId as string;
+      assertCompanyAccess(req, companyId);
+      if (req.actor.type !== "board" && !(req.actor.type === "agent" && req.actor.agentRole === "ceo")) throw forbidden("Board access required");
+
+      const removed = await access.removeMemberOrgPosition(companyId, memberId);
+      if (!removed) throw notFound("Member not found");
+      res.json({ ok: true });
+    }
+  );
+
+  router.post(
+    "/companies/:companyId/members/:memberId/link-user",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const memberId = req.params.memberId as string;
+      assertCompanyAccess(req, companyId);
+      if (req.actor.type !== "board" && !(req.actor.type === "agent" && req.actor.agentRole === "ceo")) throw forbidden("Board access required");
+
+      const { userId } = req.body as { userId?: string };
+      if (!userId || typeof userId !== "string") {
+        throw badRequest("userId is required");
+      }
+
+      const linked = await access.linkPlaceholderToUser(companyId, memberId, userId);
+      if (!linked) throw notFound("Placeholder or user not found");
+      res.json({ ok: true });
+    }
+  );
+
+  router.post(
+    "/companies/:companyId/members/placeholder",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      if (req.actor.type !== "board" && !(req.actor.type === "agent" && req.actor.agentRole === "ceo")) throw forbidden("Board access required");
+
+      const { displayName, orgRole, orgReportsTo, orgTitle } = req.body as {
+        displayName?: string;
+        orgRole?: string;
+        orgReportsTo?: string | null;
+        orgTitle?: string | null;
+      };
+      if (!displayName || typeof displayName !== "string") {
+        throw badRequest("displayName is required");
+      }
+      if (!orgRole || typeof orgRole !== "string") {
+        throw badRequest("orgRole is required");
+      }
+
+      const member = await access.createPlaceholderMember(companyId, {
+        displayName,
+        orgRole,
+        orgReportsTo: orgReportsTo ?? null,
+        orgTitle: orgTitle ?? null,
+      });
+      res.status(201).json(member);
+    }
+  );
+
   return router;
 }

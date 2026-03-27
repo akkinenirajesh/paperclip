@@ -30,3 +30,4 @@ export { notifyHireApproved, type NotifyHireApprovedInput } from "./hire-hook.js
 export { publishLiveEvent, subscribeCompanyLiveEvents } from "./live-events.js";
 export { reconcilePersistedRuntimeServicesOnStartup } from "./workspace-runtime.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
+export { createTelegramService } from "./telegram/index.js";

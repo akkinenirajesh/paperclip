@@ -645,13 +645,19 @@ export function agentRoutes(db: Db) {
     const reports = Array.isArray(node.reports)
       ? (node.reports as Array<Record<string, unknown>>).map((report) => toLeanOrgNode(report))
       : [];
-    return {
+    const lean: Record<string, unknown> = {
       id: String(node.id),
       name: String(node.name),
       role: String(node.role),
       status: String(node.status),
       reports,
     };
+    if (node.kind === "human") {
+      lean.kind = "human";
+      lean.userId = node.userId ? String(node.userId) : undefined;
+      lean.orgTitle = node.orgTitle ? String(node.orgTitle) : undefined;
+    }
+    return lean;
   }
 
   router.param("id", async (req, _res, next, rawId) => {

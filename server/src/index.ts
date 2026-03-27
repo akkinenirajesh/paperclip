@@ -28,7 +28,7 @@ import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
-import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService } from "./services/index.js";
+import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService, createTelegramService } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -607,7 +607,20 @@ export async function startServer(): Promise<StartedServer> {
         });
     }, config.heartbeatSchedulerIntervalMs);
   }
-  
+
+  // Start integrated Telegram service (if TELEGRAM_BOT_TOKEN is set)
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    const heartbeat = heartbeatService(db as any);
+    const telegramService = createTelegramService({
+      db: db as any,
+      heartbeatService: heartbeat,
+      publicUrl: process.env.PAPERCLIP_PUBLIC_URL ?? config.authPublicBaseUrl ?? `http://localhost:${listenPort}`,
+    });
+    void telegramService.start().catch((err) => {
+      logger.error({ err }, "telegram service failed to start");
+    });
+  }
+
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
     let backupInFlight = false;

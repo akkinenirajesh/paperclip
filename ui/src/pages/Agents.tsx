@@ -17,8 +17,8 @@ import { relativeTime, cn, agentRouteRef, agentUrl } from "../lib/utils";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Bot, Plus, List, GitBranch, SlidersHorizontal } from "lucide-react";
-import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
+import { Bot, Plus, List, GitBranch, SlidersHorizontal, User } from "lucide-react";
+import { AGENT_ROLE_LABELS, HUMAN_ORG_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 
 const adapterLabels: Record<string, string> = {
   claude_local: "Claude",
@@ -309,6 +309,8 @@ export function Agents() {
   );
 }
 
+const humanRoleLabels = HUMAN_ORG_ROLE_LABELS as Record<string, string>;
+
 function OrgTreeNode({
   node,
   depth,
@@ -320,26 +322,32 @@ function OrgTreeNode({
   agentMap: Map<string, Agent>;
   liveRunByAgent: Map<string, { runId: string; liveCount: number }>;
 }) {
-  const agent = agentMap.get(node.id);
+  const isHuman = node.kind === "human";
+  const agent = isHuman ? undefined : agentMap.get(node.id);
 
   const statusColor = agentStatusDot[node.status] ?? agentStatusDotDefault;
 
-  return (
-    <div style={{ paddingLeft: depth * 24 }}>
-      <Link
-        to={agent ? agentUrl(agent) : `/agents/${node.id}`}
-        className="flex items-center gap-3 px-3 py-2 hover:bg-accent/30 transition-colors w-full text-left no-underline text-inherit"
-      >
+  const content = (
+    <div
+      className="flex items-center gap-3 px-3 py-2 hover:bg-accent/30 transition-colors w-full text-left"
+      style={{ paddingLeft: depth * 24 }}
+    >
+      {isHuman ? (
+        <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      ) : (
         <span className="relative flex h-2.5 w-2.5 shrink-0">
           <span className={`absolute inline-flex h-full w-full rounded-full ${statusColor}`} />
         </span>
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium">{node.name}</span>
-          <span className="text-xs text-muted-foreground ml-2">
-            {roleLabels[node.role] ?? node.role}
-            {agent?.title ? ` - ${agent.title}` : ""}
-          </span>
-        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <span className="text-sm font-medium">{node.name}</span>
+        <span className="text-xs text-muted-foreground ml-2">
+          {isHuman
+            ? (node.orgTitle ?? humanRoleLabels[node.role] ?? node.role)
+            : (roleLabels[node.role] ?? node.role) + (agent?.title ? ` - ${agent.title}` : "")}
+        </span>
+      </div>
+      {!isHuman && (
         <div className="flex items-center gap-3 shrink-0">
           <span className="sm:hidden">
             {liveRunByAgent.has(node.id) ? (
@@ -375,7 +383,22 @@ function OrgTreeNode({
             </span>
           </div>
         </div>
-      </Link>
+      )}
+    </div>
+  );
+
+  return (
+    <div>
+      {isHuman ? (
+        content
+      ) : (
+        <Link
+          to={agent ? agentUrl(agent) : `/agents/${node.id}`}
+          className="no-underline text-inherit"
+        >
+          {content}
+        </Link>
+      )}
       {node.reports && node.reports.length > 0 && (
         <div className="border-l border-border/50 ml-4">
           {node.reports.map((child) => (

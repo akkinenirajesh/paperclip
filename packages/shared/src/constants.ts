@@ -320,6 +320,19 @@ export const LIVE_EVENT_TYPES = [
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
 
+export const HUMAN_ORG_ROLES = ["board", "founder", "advisor", "operator", "pm", "engineer", "general"] as const;
+export type HumanOrgRole = (typeof HUMAN_ORG_ROLES)[number];
+
+export const HUMAN_ORG_ROLE_LABELS: Record<HumanOrgRole, string> = {
+  board: "Board",
+  founder: "Founder",
+  advisor: "Advisor",
+  operator: "Operator",
+  pm: "PM",
+  engineer: "Engineer",
+  general: "General",
+};
+
 export const PRINCIPAL_TYPES = ["user", "agent"] as const;
 export type PrincipalType = (typeof PRINCIPAL_TYPES)[number];
 

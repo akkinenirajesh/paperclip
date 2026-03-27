@@ -17,6 +17,10 @@ export interface CompanyMembership {
   principalId: string;
   status: MembershipStatus;
   membershipRole: string | null;
+  orgRole: string | null;
+  orgReportsTo: string | null;
+  orgTitle: string | null;
+  orgDisplayName: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

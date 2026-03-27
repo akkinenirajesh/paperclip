@@ -40,6 +40,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Activity as ActivityIcon,
+  Bot,
   Check,
   ChevronDown,
   ChevronRight,
@@ -53,6 +54,7 @@ import {
   Repeat,
   SlidersHorizontal,
   Trash2,
+  User,
 } from "lucide-react";
 import type { ActivityEvent } from "@paperclipai/shared";
 import type { Agent, IssueAttachment } from "@paperclipai/shared";
@@ -721,12 +723,40 @@ export function IssueDetail() {
           <StatusIcon
             status={issue.status}
             onChange={(status) => updateIssue.mutate({ status })}
+            showLabel
           />
           <PriorityIcon
             priority={issue.priority}
             onChange={(priority) => updateIssue.mutate({ priority })}
           />
           <span className="text-sm font-mono text-muted-foreground shrink-0">{issue.identifier ?? issue.id.slice(0, 8)}</span>
+
+          {/* Assignee badge */}
+          {(() => {
+            if (issue.assigneeAgentId) {
+              const agent = (agents ?? []).find((a) => a.id === issue.assigneeAgentId);
+              return (
+                <span className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-xs text-muted-foreground shrink-0">
+                  <Bot className="h-3 w-3" />
+                  {agent?.name ?? "Agent"}
+                </span>
+              );
+            }
+            if (issue.assigneeUserId) {
+              return (
+                <span className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-xs text-muted-foreground shrink-0">
+                  <User className="h-3 w-3" />
+                  {issue.assigneeUserId === session?.user?.id ? "You" : "Human"}
+                </span>
+              );
+            }
+            return (
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/50 shrink-0">
+                <User className="h-3 w-3" />
+                Unassigned
+              </span>
+            );
+          })()}
 
           {hasLiveRuns && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-medium text-cyan-600 dark:text-cyan-400 shrink-0">

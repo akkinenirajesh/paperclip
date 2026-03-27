@@ -41,6 +41,9 @@ export interface OrgNode {
   name: string;
   role: string;
   status: string;
+  kind?: "human" | "agent";
+  userId?: string;
+  orgTitle?: string;
   reports: OrgNode[];
 }
 

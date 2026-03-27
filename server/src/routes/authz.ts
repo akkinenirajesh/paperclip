@@ -2,9 +2,9 @@ import type { Request } from "express";
 import { forbidden, unauthorized } from "../errors.js";
 
 export function assertBoard(req: Request) {
-  if (req.actor.type !== "board") {
-    throw forbidden("Board access required");
-  }
+  if (req.actor.type === "board") return;
+  if (req.actor.type === "agent" && req.actor.agentRole === "ceo") return;
+  throw forbidden("Board access required");
 }
 
 export function assertInstanceAdmin(req: Request) {

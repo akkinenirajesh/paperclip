@@ -1,6 +1,6 @@
 {
-  "id": "1006727d-476b-474c-932b-51f1ba9626fb",
-  "prevId": "cb7f5c2d-8be7-4bd7-8adc-6d942a4f2589",
+  "id": "127092e3-32f6-40af-9bfb-5b7f81b86f60",
+  "prevId": "88cc6c25-99e9-4e29-aa62-5a0e50cf64a8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2817,6 +2817,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "org_role": {
+          "name": "org_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "org_reports_to": {
+          "name": "org_reports_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "org_title": {
+          "name": "org_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "org_display_name": {
+          "name": "org_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5168,31 +5192,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "process_pid": {
-          "name": "process_pid",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "process_started_at": {
-          "name": "process_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retry_of_run_id": {
-          "name": "retry_of_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "process_loss_retry_count": {
-          "name": "process_loss_retry_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "context_snapshot": {
           "name": "context_snapshot",
           "type": "jsonb",
@@ -5282,19 +5281,6 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "heartbeat_runs_retry_of_run_id_heartbeat_runs_id_fk": {
-          "name": "heartbeat_runs_retry_of_run_id_heartbeat_runs_id_fk",
-          "tableFrom": "heartbeat_runs",
-          "tableTo": "heartbeat_runs",
-          "columnsFrom": [
-            "retry_of_run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5320,13 +5306,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'default'"
-        },
-        "general": {
-          "name": "general",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
         },
         "experimental": {
           "name": "experimental",

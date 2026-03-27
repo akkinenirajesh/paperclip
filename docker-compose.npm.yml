@@ -1,0 +1,23 @@
+services:
+  paperclip:
+    build:
+      context: .
+      dockerfile: Dockerfile.npm
+    ports:
+      - "3100:3100"
+    environment:
+      HOST: "0.0.0.0"
+      PAPERCLIP_HOME: "/paperclip"
+      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
+      PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-https://paperclip.primeform.in}"
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+    volumes:
+      - paperclip-data:/paperclip
+    restart: unless-stopped
+
+volumes:
+  paperclip-data:

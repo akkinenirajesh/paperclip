@@ -230,6 +230,35 @@ export async function getNewApprovals(since: string): Promise<Array<{
   return rows;
 }
 
+export async function getNewHumanAssignedIssues(since: string): Promise<Array<{
+  id: string;
+  company_id: string;
+  identifier: string;
+  title: string;
+  assignee_user_id: string;
+  created_at: string;
+}>> {
+  const { rows } = await pool.query(
+    `SELECT i.id, i.company_id, i.identifier, i.title,
+            i.assignee_user_id, i.created_at
+     FROM issues i
+     WHERE i.created_at > $1
+       AND i.assignee_user_id IS NOT NULL
+     ORDER BY i.created_at ASC
+     LIMIT 50`,
+    [since]
+  );
+  return rows;
+}
+
+export async function getUserByPaperclipId(paperclipUserId: string): Promise<TelegramUser | null> {
+  const { rows } = await pool.query(
+    "SELECT * FROM telegram_user_map WHERE paperclip_user_id = $1",
+    [paperclipUserId]
+  );
+  return rows[0] ?? null;
+}
+
 export async function getAgentName(agentId: string): Promise<string> {
   const { rows } = await pool.query(
     "SELECT name FROM agents WHERE id = $1",
@@ -355,10 +384,21 @@ export async function triggerHeartbeat(companyId: string): Promise<void> {
 export async function approveApproval(approvalId: string, decidedBy: string): Promise<string | null> {
   const { rows } = await pool.query(
     `UPDATE approvals SET status = 'approved', decided_by_user_id = $2, decided_at = NOW(), updated_at = NOW()
-     WHERE id = $1 AND status = 'pending' RETURNING requested_by_agent_id, company_id`,
+     WHERE id = $1 AND status = 'pending' RETURNING requested_by_agent_id, company_id, type, payload`,
     [approvalId, decidedBy]
   );
   if (rows.length === 0) return null;
+
+  // For hire_agent approvals, activate the pending agent
+  if (rows[0].type === "hire_agent" && rows[0].payload?.agentId) {
+    await pool.query(
+      `UPDATE agents SET status = 'idle', updated_at = NOW()
+       WHERE id = $1 AND status = 'pending_approval'`,
+      [rows[0].payload.agentId]
+    );
+    console.log(`[db] activated pending agent ${rows[0].payload.agentId}`);
+  }
+
   // Wake the requesting agent
   if (rows[0].requested_by_agent_id) {
     await pool.query(

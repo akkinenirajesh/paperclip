@@ -1,0 +1,1 @@
+ALTER TABLE "agents" ADD COLUMN "reports_to_user_id" text;

@@ -56,3 +56,7 @@ export { pluginEntities } from "./plugin_entities.js";
 export { pluginJobs, pluginJobRuns } from "./plugin_jobs.js";
 export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
+export { telegramUserMap } from "./telegram_user_map.js";
+export { telegramMessageMap } from "./telegram_message_map.js";
+export { telegramCallbackMap } from "./telegram_callback_map.js";
+export { telegramPollCursor } from "./telegram_poll_cursor.js";

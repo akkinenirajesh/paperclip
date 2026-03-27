@@ -17,6 +17,7 @@ export function startEventPoller(bot: Bot) {
       try {
         await pollAgentComments(bot);
         await pollApprovals(bot);
+        await pollHumanAssignedIssues(bot);
       } catch (err) {
         console.error("[poller] error:", err);
       }
@@ -221,6 +222,56 @@ async function pollTaskDigest(bot: Bot) {
       console.error(`[poller] failed to send digest to ${admin.telegram_chat_id}:`, err);
     }
   }
+}
+
+async function pollHumanAssignedIssues(bot: Bot) {
+  let cursor = await db.getCursor("last_human_issue_ts");
+  if (!cursor) {
+    cursor = new Date().toISOString();
+    await db.setCursor("last_human_issue_ts", cursor);
+    return;
+  }
+  const issues = await db.getNewHumanAssignedIssues(cursor);
+
+  if (issues.length === 0) return;
+
+  for (const issue of issues) {
+    const recipient = await db.getUserByPaperclipId(issue.assignee_user_id);
+    if (!recipient) continue;
+
+    const companyName = await db.getCompanyName(issue.company_id);
+    const prefix = await db.getCompanyPrefix(issue.company_id);
+    const url = `${config.paperclipPublicUrl}/${prefix}/issues/${issue.id}`;
+
+    const message = await formatNotification({
+      type: "issue_assigned",
+      companyName,
+      issueIdentifier: issue.identifier,
+      issueTitle: issue.title,
+      publicUrl: url,
+    });
+
+    try {
+      const sent = await bot.api.sendMessage(recipient.telegram_chat_id, message, {
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
+      });
+
+      await db.saveMessageMap({
+        telegram_chat_id: recipient.telegram_chat_id,
+        telegram_message_id: String(sent.message_id),
+        direction: "outbound",
+        paperclip_issue_id: issue.id,
+        paperclip_company_id: issue.company_id,
+        raw_text: message,
+      });
+    } catch (err) {
+      console.error(`[poller] failed to notify ${recipient.telegram_chat_id} for issue ${issue.identifier}:`, err);
+    }
+  }
+
+  const lastTs = new Date(new Date(issues[issues.length - 1].created_at).getTime() + 1);
+  await db.setCursor("last_human_issue_ts", lastTs.toISOString());
 }
 
 function sleep(ms: number) {

@@ -30,30 +30,24 @@ services:
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
     volumes:
       - paperclip-data:/paperclip
       - /home/rajesh/.claude:/paperclip/.claude
+      # Dev mount: source code live-reload without rebuild
+      - .:/app/src-mount:ro
+    entrypoint: >
+      sh -c '
+        if [ -d /app/src-mount/server/src ]; then
+          cp -r /app/src-mount/server/src/* /app/server/src/;
+          cp -r /app/src-mount/packages/db/src/* /app/packages/db/src/;
+          cp -r /app/src-mount/skills/* /app/skills/ 2>/dev/null || true;
+        fi;
+        exec node --import ./server/node_modules/tsx/dist/loader.mjs server/src/index.ts
+      '
     depends_on:
       db:
         condition: service_healthy
-
-  telegram-bridge:
-    build:
-      context: ./services/telegram-bridge
-      dockerfile: Dockerfile
-    environment:
-      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
-      DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip
-      PAPERCLIP_API_URL: "http://server:3100"
-      PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-https://paperclip.primeform.in}"
-      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
-      AI_MODEL: "${TELEGRAM_AI_MODEL:-anthropic/claude-sonnet-4}"
-    depends_on:
-      db:
-        condition: service_healthy
-      server:
-        condition: service_started
-    restart: unless-stopped
 
 volumes:
   pgdata:

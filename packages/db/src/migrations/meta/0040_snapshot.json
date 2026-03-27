@@ -1,6 +1,6 @@
 {
-  "id": "ff2d3ea8-018e-44ec-9e7d-dfa81b2ef772",
-  "prevId": "1006727d-476b-474c-932b-51f1ba9626fb",
+  "id": "03d1b641-77c6-4036-9ce5-87a5f6cd2140",
+  "prevId": "127092e3-32f6-40af-9bfb-5b7f81b86f60",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2817,6 +2817,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "org_role": {
+          "name": "org_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "org_reports_to": {
+          "name": "org_reports_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "org_title": {
+          "name": "org_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "org_display_name": {
+          "name": "org_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3244,179 +3268,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.company_skills": {
-      "name": "company_skills",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "markdown": {
-          "name": "markdown",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_type": {
-          "name": "source_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'local_path'"
-        },
-        "source_locator": {
-          "name": "source_locator",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_ref": {
-          "name": "source_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "trust_level": {
-          "name": "trust_level",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'markdown_only'"
-        },
-        "compatibility": {
-          "name": "compatibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'compatible'"
-        },
-        "file_inventory": {
-          "name": "file_inventory",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "company_skills_company_key_idx": {
-          "name": "company_skills_company_key_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "company_skills_company_name_idx": {
-          "name": "company_skills_company_name_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "company_skills_company_id_companies_id_fk": {
-          "name": "company_skills_company_id_companies_id_fk",
-          "tableFrom": "company_skills",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -5341,31 +5192,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "process_pid": {
-          "name": "process_pid",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "process_started_at": {
-          "name": "process_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retry_of_run_id": {
-          "name": "retry_of_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "process_loss_retry_count": {
-          "name": "process_loss_retry_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "context_snapshot": {
           "name": "context_snapshot",
           "type": "jsonb",
@@ -5455,19 +5281,6 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "heartbeat_runs_retry_of_run_id_heartbeat_runs_id_fk": {
-          "name": "heartbeat_runs_retry_of_run_id_heartbeat_runs_id_fk",
-          "tableFrom": "heartbeat_runs",
-          "tableTo": "heartbeat_runs",
-          "columnsFrom": [
-            "retry_of_run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5493,13 +5306,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'default'"
-        },
-        "general": {
-          "name": "general",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
         },
         "experimental": {
           "name": "experimental",
@@ -9830,6 +9636,282 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.telegram_callback_map": {
+      "name": "telegram_callback_map",
+      "schema": "",
+      "columns": {
+        "short_id": {
+          "name": "short_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approval_id": {
+          "name": "approval_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.telegram_message_map": {
+      "name": "telegram_message_map",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "telegram_chat_id": {
+          "name": "telegram_chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "telegram_message_id": {
+          "name": "telegram_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paperclip_issue_id": {
+          "name": "paperclip_issue_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paperclip_comment_id": {
+          "name": "paperclip_comment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paperclip_company_id": {
+          "name": "paperclip_company_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_task_session_id": {
+          "name": "agent_task_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_text": {
+          "name": "raw_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_telegram_msg_chat": {
+          "name": "idx_telegram_msg_chat",
+          "columns": [
+            {
+              "expression": "telegram_chat_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_telegram_msg_issue": {
+          "name": "idx_telegram_msg_issue",
+          "columns": [
+            {
+              "expression": "paperclip_issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.telegram_poll_cursor": {
+      "name": "telegram_poll_cursor",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.telegram_user_map": {
+      "name": "telegram_user_map",
+      "schema": "",
+      "columns": {
+        "telegram_chat_id": {
+          "name": "telegram_chat_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "telegram_username": {
+          "name": "telegram_username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "telegram_display_name": {
+          "name": "telegram_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paperclip_user_id": {
+          "name": "paperclip_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paperclip_company_id": {
+          "name": "paperclip_company_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'member'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "telegram_user_map_company_idx": {
+          "name": "telegram_user_map_company_idx",
+          "columns": [
+            {
+              "expression": "paperclip_company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "telegram_user_map_paperclip_user_idx": {
+          "name": "telegram_user_map_paperclip_user_idx",
+          "columns": [
+            {
+              "expression": "paperclip_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

@@ -378,6 +378,116 @@ export function accessService(db: Db) {
       updatedAt: new Date(),
     });
   }
+  async function createPlaceholderMember(
+    companyId: string,
+    data: { displayName: string; orgRole: string; orgReportsTo?: string | null; orgTitle?: string | null },
+  ) {
+    const placeholderId = `placeholder_${crypto.randomUUID()}`;
+    const row = await db
+      .insert(companyMemberships)
+      .values({
+        companyId,
+        principalType: "user",
+        principalId: placeholderId,
+        status: "active",
+        membershipRole: "placeholder",
+        orgRole: data.orgRole,
+        orgReportsTo: data.orgReportsTo ?? null,
+        orgTitle: data.orgTitle ?? null,
+        orgDisplayName: data.displayName,
+      })
+      .returning()
+      .then((rows) => rows[0]);
+    return row;
+  }
+
+  async function updateMemberOrgPosition(
+    companyId: string,
+    membershipId: string,
+    data: { orgRole: string; orgReportsTo?: string | null; orgTitle?: string | null },
+  ) {
+    const member = await db
+      .select()
+      .from(companyMemberships)
+      .where(and(eq(companyMemberships.companyId, companyId), eq(companyMemberships.id, membershipId)))
+      .then((rows) => rows[0] ?? null);
+    if (!member) return null;
+
+    await db
+      .update(companyMemberships)
+      .set({
+        orgRole: data.orgRole,
+        orgReportsTo: data.orgReportsTo ?? null,
+        orgTitle: data.orgTitle ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(companyMemberships.id, membershipId));
+
+    return member;
+  }
+
+  async function linkPlaceholderToUser(
+    companyId: string,
+    placeholderMembershipId: string,
+    targetUserId: string,
+  ) {
+    const placeholder = await db
+      .select()
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.id, placeholderMembershipId),
+          eq(companyMemberships.membershipRole, "placeholder"),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    if (!placeholder) return null;
+
+    // Find the real user's membership
+    const userMembership = await getMembership(companyId, "user", targetUserId);
+    if (!userMembership) return null;
+
+    // Transfer org position to the real user
+    await db
+      .update(companyMemberships)
+      .set({
+        orgRole: placeholder.orgRole,
+        orgReportsTo: placeholder.orgReportsTo,
+        orgTitle: placeholder.orgTitle,
+        orgDisplayName: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(companyMemberships.id, userMembership.id));
+
+    // Delete the placeholder
+    await db
+      .delete(companyMemberships)
+      .where(eq(companyMemberships.id, placeholderMembershipId));
+
+    return userMembership;
+  }
+
+  async function removeMemberOrgPosition(companyId: string, membershipId: string) {
+    const member = await db
+      .select()
+      .from(companyMemberships)
+      .where(and(eq(companyMemberships.companyId, companyId), eq(companyMemberships.id, membershipId)))
+      .then((rows) => rows[0] ?? null);
+    if (!member) return null;
+
+    await db
+      .update(companyMemberships)
+      .set({
+        orgRole: null,
+        orgReportsTo: null,
+        orgTitle: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(companyMemberships.id, membershipId));
+
+    return member;
+  }
 
   return {
     isInstanceAdmin,
@@ -390,6 +500,10 @@ export function accessService(db: Db) {
     copyActiveUserMemberships,
     listHumanMembers,
     setMemberPermissions,
+    createPlaceholderMember,
+    linkPlaceholderToUser,
+    updateMemberOrgPosition,
+    removeMemberOrgPosition,
     promoteInstanceAdmin,
     demoteInstanceAdmin,
     listUserCompanyAccess,

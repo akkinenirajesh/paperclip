@@ -31,11 +31,17 @@ const mockSecretService = vi.hoisted(() => ({
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
+const mockAgentService = vi.hoisted(() => ({
+  activatePendingApproval: vi.fn(),
+}));
+
 vi.mock("../services/index.js", () => ({
+  agentService: () => mockAgentService,
   approvalService: () => mockApprovalService,
   heartbeatService: () => mockHeartbeatService,
   issueApprovalService: () => mockIssueApprovalService,
   logActivity: mockLogActivity,
+  notifyHireApproved: vi.fn(),
   secretService: () => mockSecretService,
 }));
 

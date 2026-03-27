@@ -4,6 +4,11 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
+# ── Global CLI tools (cached independently — only changes when Dockerfile changes) ──
+FROM base AS tools
+RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai
+
+# ── Dependencies (cached unless package.json/lockfile changes) ──
 FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
@@ -25,6 +30,7 @@ COPY patches/ patches/
 
 RUN pnpm install --frozen-lockfile
 
+# ── Build (source changes trigger from here) ──
 FROM base AS build
 WORKDIR /app
 COPY --from=deps /app /app
@@ -35,12 +41,16 @@ RUN pnpm --filter @paperclipai/plugin-sdk build
 RUN pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
+# ── Production image ──
 FROM base AS production
 WORKDIR /app
+
+# Copy global CLI tools from cached tools stage (parallel build, doesn't block app build)
+COPY --from=tools /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=tools /usr/local/bin/claude /usr/local/bin/codex /usr/local/bin/opencode /usr/local/bin/
+
 COPY --chown=node:node --from=build /app /app
-RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
-  && mkdir -p /paperclip \
-  && chown node:node /paperclip
+RUN mkdir -p /paperclip && chown node:node /paperclip
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
